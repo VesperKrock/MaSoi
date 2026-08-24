@@ -19,6 +19,12 @@ describe('Player zero-scroll CSS contract', () => {
     expect(styles).not.toMatch(
       /\.compact-action \.target-list\s*\{[^}]*overflow:\s*(auto|scroll)/s,
     )
+    expect(styles).toMatch(
+      /\.compact-action \.target-list\s*\{[^}]*grid-auto-rows:\s*minmax\(44px,/s,
+    )
+    expect(styles).toMatch(
+      /\.compact-action \.target\s*\{[^}]*min-height:\s*44px;/s,
+    )
   })
 
   it('does not apply the zero-scroll class to Moderator roots', () => {

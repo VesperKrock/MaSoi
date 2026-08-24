@@ -9,24 +9,56 @@ import {
   getRoomJoinability,
   type RoomSetupInput,
 } from '../../domain/game/room-setup'
-import type {
-  DispatchResult,
-  RoomCommand,
-  RoomState,
-} from '../../domain/game/types'
+import type { RoomCommand, RoomState } from '../../domain/game/types'
 import {
   projectRoomSnapshot,
   type RoomAudience,
   type RoomSnapshot,
 } from '../../state/room-projection'
-import type {
-  CreateRoomResult,
-  JoinRoomResult,
-  RoomTransport,
+import {
+  roomTransportErrorCodes,
+  type CreateRoomResult,
+  type DispatchResult,
+  type JoinRoomResult,
+  type RoomTransport,
+  type RoomTransportErrorCode,
 } from '../room-transport'
 
 const storageKey = 'masoi.ms0b.rooms.v1'
 const channelName = 'masoi.ms0b.rooms.channel.v1'
+const mutationLockName = 'masoi-ms0b-room-write'
+
+export const localConcurrencyUnsupportedMessage =
+  'Trình duyệt này không hỗ trợ đồng bộ phòng cục bộ an toàn. Vui lòng dùng Chrome hoặc Edge phiên bản mới, rồi thử lại.'
+
+interface LocalMutationLockAuthority {
+  request<T>(name: string, operation: () => T | PromiseLike<T>): Promise<T>
+}
+
+class LocalRoomTransportError extends Error {
+  constructor(
+    readonly code: RoomTransportErrorCode,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'LocalRoomTransportError'
+  }
+}
+
+export function runWithSafeLocalMutationAuthority<T>(
+  authority: LocalMutationLockAuthority | null | undefined,
+  operation: () => T,
+): Promise<T> {
+  if (!authority || typeof authority.request !== 'function') {
+    return Promise.reject(
+      new LocalRoomTransportError(
+        roomTransportErrorCodes.localConcurrencyUnsupported,
+        localConcurrencyUnsupportedMessage,
+      ),
+    )
+  }
+  return authority.request(mutationLockName, operation)
+}
 
 interface LocalRoomRegistry {
   schemaVersion: 1
@@ -40,8 +72,6 @@ interface Subscription {
 }
 
 export class LocalRoomTransport implements RoomTransport {
-  private static fallbackQueue: Promise<unknown> = Promise.resolve()
-
   private readonly subscriptions = new Set<Subscription>()
   private readonly channel: BroadcastChannel | null
 
@@ -216,18 +246,21 @@ export class LocalRoomTransport implements RoomTransport {
   }
 
   private async runExclusive<T>(operation: () => T): Promise<T> {
-    if ('locks' in navigator && navigator.locks) {
-      return navigator.locks.request('masoi-ms0b-room-write', operation)
-    }
-    const queued = LocalRoomTransport.fallbackQueue.then(operation)
-    LocalRoomTransport.fallbackQueue = queued.then(
-      () => undefined,
-      () => undefined,
-    )
-    return queued
+    const authority =
+      typeof navigator === 'undefined'
+        ? undefined
+        : (navigator.locks as LocalMutationLockAuthority | undefined)
+    return runWithSafeLocalMutationAuthority(authority, operation)
   }
 
-  private failure(error: unknown): { ok: false; error: string } {
+  private failure(error: unknown): DispatchResult & { ok: false } {
+    if (error instanceof LocalRoomTransportError) {
+      return {
+        ok: false,
+        error: error.message,
+        errorCode: error.code,
+      }
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Lệnh không thành công.',

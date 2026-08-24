@@ -1,4 +1,4 @@
-import type { DispatchResult, RoomCommand } from '../domain/game/types'
+import type { RoomCommand } from '../domain/game/types'
 import type {
   RoomJoinability,
   RoomSetupInput,
@@ -8,6 +8,19 @@ import type { RoomAudience, RoomSnapshot } from '../state/room-projection'
 export interface CreateRoomResult extends DispatchResult {
   roomId?: string
   roomCode?: string
+}
+
+export const roomTransportErrorCodes = {
+  localConcurrencyUnsupported: 'LOCAL_CONCURRENCY_UNSUPPORTED',
+} as const
+
+export type RoomTransportErrorCode =
+  (typeof roomTransportErrorCodes)[keyof typeof roomTransportErrorCodes]
+
+export interface DispatchResult {
+  ok: boolean
+  error?: string
+  errorCode?: RoomTransportErrorCode
 }
 
 export interface JoinRoomResult extends DispatchResult {

@@ -174,8 +174,3 @@ export type RoomCommand =
       reason?: string
     }
   | { type: 'END_MATCH' }
-
-export interface DispatchResult {
-  ok: boolean
-  error?: string
-}

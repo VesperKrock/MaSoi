@@ -1578,7 +1578,7 @@ body:has(.zero-scroll-surface) {
 .compact-action .target-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: minmax(38px, 1fr);
+  grid-auto-rows: minmax(44px, 1fr);
   min-height: 0;
   max-height: 272px;
   margin: 2px 0;
@@ -1590,7 +1590,7 @@ body:has(.zero-scroll-surface) {
 .compact-action .target {
   display: grid;
   min-width: 0;
-  min-height: 0;
+  min-height: 44px;
   padding: 4px;
   border-radius: 7px;
   text-align: center;
@@ -1606,7 +1606,7 @@ body:has(.zero-scroll-surface) {
   display: block;
   width: 100%;
   overflow: hidden;
-  font-size: clamp(9px, 2.8vw, 11px);
+  font-size: clamp(10px, 2.8vw, 11px);
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;

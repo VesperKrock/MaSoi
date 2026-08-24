@@ -3,3 +3,5 @@ dist/
 coverage/
 *.local
 .DS_Store
+prompts/
+matkhau-supabase.txt

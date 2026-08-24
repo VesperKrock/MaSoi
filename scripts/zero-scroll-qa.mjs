@@ -88,6 +88,30 @@ function inspectPlayerLayout() {
       const style = getComputedStyle(element)
       return style.display !== 'none' && style.visibility !== 'hidden'
     })
+  const requiredTargets = [...root.querySelectorAll('.target[data-required-control]')]
+  const targetRects = requiredTargets.map((element) => {
+    const rect = element.getBoundingClientRect()
+    return { width: rect.width, height: rect.height }
+  })
+  const targetList = root.querySelector('.target-list')
+  const targetMetrics = targetRects.length > 0
+    ? {
+        count: targetRects.length,
+        minWidth: Math.min(...targetRects.map(({ width }) => width)),
+        maxWidth: Math.max(...targetRects.map(({ width }) => width)),
+        minHeight: Math.min(...targetRects.map(({ height }) => height)),
+        maxHeight: Math.max(...targetRects.map(({ height }) => height)),
+        fontSize: Number.parseFloat(
+          getComputedStyle(requiredTargets[0].querySelector('strong') ?? requiredTargets[0]).fontSize,
+        ),
+        gridGap: targetList
+          ? Number.parseFloat(getComputedStyle(targetList).rowGap)
+          : 0,
+      }
+    : null
+  const touchTargetsPass =
+    !targetMetrics ||
+    (targetMetrics.minWidth >= 44 && targetMetrics.minHeight >= 44)
   const outsideControls = controls
     .filter((element) => {
       const rect = element.getBoundingClientRect()
@@ -128,7 +152,8 @@ function inspectPlayerLayout() {
       !rootOutside &&
       nestedScroll.length === 0 &&
       clippedStages.length === 0 &&
-      outsideControls.length === 0,
+      outsideControls.length === 0 &&
+      touchTargetsPass,
     surface: root.dataset.surface,
     documentScroll,
     rootOutside,
@@ -136,6 +161,8 @@ function inspectPlayerLayout() {
     clippedStages,
     outsideControls,
     controlCount: controls.length,
+    touchTargetsPass,
+    targetMetrics,
   }
 }
 
@@ -182,6 +209,12 @@ try {
   const failed = results.filter((result) => !result.pass)
   for (const result of results) {
     console.log(`${result.pass ? 'PASS' : 'FAIL'} ${result.surface.padEnd(28)} ${result.viewport}`)
+    if (result.targetMetrics) {
+      const metrics = result.targetMetrics
+      console.log(
+        `  targets=${metrics.count} min=${metrics.minWidth.toFixed(2)}x${metrics.minHeight.toFixed(2)} max=${metrics.maxWidth.toFixed(2)}x${metrics.maxHeight.toFixed(2)} font=${metrics.fontSize.toFixed(2)} gap=${metrics.gridGap.toFixed(2)}`,
+      )
+    }
     if (!result.pass) console.log(JSON.stringify(result, null, 2))
   }
   if (failed.length > 0) process.exitCode = 1
