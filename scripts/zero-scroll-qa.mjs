@@ -56,7 +56,7 @@ const results = []
 async function openSurface(page, surface) {
   const harnessSurface = surface === 'role-recheck' ? 'neutral' : surface
   await page.goto(
-    `${origin}/?dev=zero-scroll&surface=${encodeURIComponent(harnessSurface)}`,
+    `${origin}/?dev=zero-scroll&surface=${encodeURIComponent(harnessSurface)}&transport=local`,
     { waitUntil: 'networkidle0' },
   )
   if (surface === 'name-modal') {
@@ -186,7 +186,7 @@ try {
   for (const viewport of moderatorViewports) {
     const page = await browser.newPage()
     await page.setViewport({ width: viewport.width, height: viewport.height })
-    await page.goto(`${origin}/?screen=create`, { waitUntil: 'networkidle0' })
+    await page.goto(`${origin}/?screen=create&transport=local`, { waitUntil: 'networkidle0' })
     const inspection = await page.evaluate(() => ({
       horizontalScroll: document.documentElement.scrollWidth > innerWidth + 1,
       verticalScrollable: document.documentElement.scrollHeight > innerHeight,

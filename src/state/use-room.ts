@@ -29,7 +29,7 @@ export function useRoom(
           setError(
             reason instanceof Error
               ? reason.message
-              : 'Không thể mở phòng local.',
+              : 'Không thể mở phòng.',
           )
         }
       },

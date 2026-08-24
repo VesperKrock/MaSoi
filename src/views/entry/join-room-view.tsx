@@ -48,7 +48,7 @@ export function JoinRoomView({ transport }: JoinRoomViewProps) {
       return
     }
     window.location.assign(
-      `?room=${encodeURIComponent(result.roomId)}&player=${encodeURIComponent(result.playerId)}`,
+      `?room=${encodeURIComponent(result.roomId)}&player=${encodeURIComponent(result.playerId)}${transport.kind === 'LOCAL' ? '&transport=local' : ''}`,
     )
   }
 
@@ -60,9 +60,11 @@ export function JoinRoomView({ transport }: JoinRoomViewProps) {
       data-player-viewport
       data-surface={flow.step === 'NAME' ? 'name-modal' : 'join'}
     >
-      <a className="entry-back" href="/">← Trang chủ</a>
+      <a className="entry-back" href={transport.kind === 'LOCAL' ? '/?transport=local' : '/'}>← Trang chủ</a>
       <section className="join-card">
-        <p className="eyebrow">Cùng trình duyệt · local</p>
+        <p className="eyebrow">
+          {transport.kind === 'LOCAL' ? 'DEV local · Cùng trình duyệt' : 'Phòng nhiều thiết bị'}
+        </p>
         <h1>Vào phòng</h1>
         <p>Nhập mã 6 số do Quản trò hiển thị.</p>
         <form onSubmit={(event) => void validateCode(event)}>
@@ -94,7 +96,11 @@ export function JoinRoomView({ transport }: JoinRoomViewProps) {
             {busy ? 'Đang kiểm tra…' : 'Tiếp tục'}
           </button>
         </form>
-        <small>MS-1A mới hỗ trợ mã phòng thật giữa nhiều thiết bị.</small>
+        <small>
+          {transport.kind === 'LOCAL'
+            ? 'Mã local chỉ hoạt động trong cùng trình duyệt.'
+            : 'Mã phòng được kiểm tra trực tiếp với máy chủ.'}
+        </small>
       </section>
 
       {flow.step === 'NAME' && (

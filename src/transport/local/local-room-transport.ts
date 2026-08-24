@@ -72,6 +72,7 @@ interface Subscription {
 }
 
 export class LocalRoomTransport implements RoomTransport {
+  readonly kind = 'LOCAL' as const
   private readonly subscriptions = new Set<Subscription>()
   private readonly channel: BroadcastChannel | null
 

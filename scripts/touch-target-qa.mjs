@@ -65,7 +65,7 @@ async function roomState(page, roomId) {
 
 async function joinPlayer(code, name) {
   const page = await newPage()
-  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await page.click('.entry-actions a:nth-child(2)')
   await page.waitForSelector('.join-card')
   await page.type('input[inputmode="numeric"]', code)
@@ -156,12 +156,12 @@ async function measureAtAllViewports(page, surface) {
 
 try {
   const clear = await newPage()
-  await clear.goto(origin, { waitUntil: 'domcontentloaded' })
+  await clear.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await clear.evaluate(() => localStorage.clear())
   await clear.close()
 
   const moderator = await newPage({ width: 1280, height: 900 })
-  await moderator.goto(origin, { waitUntil: 'domcontentloaded' })
+  await moderator.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await moderator.click('.entry-actions a:first-child')
   await moderator.waitForSelector('.create-room-layout')
   await moderator.select('.room-basics select', '16')

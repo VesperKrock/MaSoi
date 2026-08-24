@@ -61,7 +61,7 @@ async function newPage({ disableLocks = false, desktop = false } = {}) {
 
 async function clearRooms() {
   const page = await newPage()
-  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await page.evaluate(() => localStorage.clear())
   await page.close()
 }
@@ -76,7 +76,7 @@ async function registry(page) {
 
 async function createRoom() {
   const page = await newPage({ desktop: true })
-  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await page.click('.entry-actions a:first-child')
   await page.waitForSelector('.create-room-layout')
   await page.click('.create-room-footer .button.primary')
@@ -96,7 +96,7 @@ async function createRoom() {
 
 async function prepareJoin(code, name, disableLocks = false) {
   const page = await newPage({ disableLocks })
-  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   await page.click('.entry-actions a:nth-child(2)')
   await page.waitForSelector('.join-card')
   await page.type('input[inputmode="numeric"]', code)
@@ -183,7 +183,7 @@ async function webLocksDuplicateNameRace() {
 async function noLocksCreate() {
   await clearRooms()
   const page = await newPage({ disableLocks: true, desktop: true })
-  await page.goto(`${origin}/?screen=create`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?screen=create&transport=local`, { waitUntil: 'domcontentloaded' })
   const machineResult = await page.evaluate(async () => {
     const module = await import('/src/transport/local/local-room-transport.ts')
     const transport = new module.LocalRoomTransport()

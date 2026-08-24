@@ -93,7 +93,11 @@ export type RoomJoinability =
   | { joinable: true; roomId: string; roomCode: string }
   | {
       joinable: false
-      reason: 'NOT_FOUND' | 'ROOM_FULL' | 'ROOM_STARTED'
+      reason:
+        | 'NOT_FOUND'
+        | 'ROOM_FULL'
+        | 'ROOM_STARTED'
+        | 'BACKEND_UNAVAILABLE'
       message: string
     }
 

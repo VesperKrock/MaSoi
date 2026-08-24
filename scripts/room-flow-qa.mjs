@@ -35,7 +35,7 @@ async function joinPlayer(code, name) {
   const page = await browser.newPage()
   page.setDefaultTimeout(15_000)
   await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
-  await page.goto(`${origin}/?screen=join`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${origin}/?screen=join&transport=local`, { waitUntil: 'domcontentloaded' })
   await page.type('input[aria-label="Mã phòng gồm 6 chữ số"]', code)
   await page.click('.join-card button')
   await page.waitForSelector('.name-modal')
@@ -50,7 +50,7 @@ async function joinPlayer(code, name) {
 try {
   const landing = await browser.newPage()
   landing.setDefaultTimeout(15_000)
-  await landing.goto(origin, { waitUntil: 'domcontentloaded' })
+  await landing.goto(`${origin}/?transport=local`, { waitUntil: 'domcontentloaded' })
   const entryLabels = await landing.$$eval('.entry-actions a', (links) =>
     links.map((link) => link.textContent?.trim()),
   )
@@ -63,7 +63,7 @@ try {
   const moderator = await browser.newPage()
   moderator.setDefaultTimeout(15_000)
   await moderator.setViewport({ width: 1280, height: 900 })
-  await moderator.goto(`${origin}/?screen=create`, { waitUntil: 'domcontentloaded' })
+  await moderator.goto(`${origin}/?screen=create&transport=local`, { waitUntil: 'domcontentloaded' })
   await moderator.click('.create-room-footer .button.primary')
   await moderator.waitForFunction(() => new URL(location.href).searchParams.get('as') === 'moderator')
   await moderator.waitForSelector('.lobby-moderator')
@@ -116,7 +116,7 @@ try {
 
   const lateJoin = await browser.newPage()
   lateJoin.setDefaultTimeout(15_000)
-  await lateJoin.goto(`${origin}/?screen=join`, { waitUntil: 'domcontentloaded' })
+  await lateJoin.goto(`${origin}/?screen=join&transport=local`, { waitUntil: 'domcontentloaded' })
   await lateJoin.type('input[aria-label="Mã phòng gồm 6 chữ số"]', code)
   await lateJoin.click('.join-card button')
   await lateJoin.waitForSelector('.form-error')

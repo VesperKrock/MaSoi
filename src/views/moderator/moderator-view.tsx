@@ -112,7 +112,7 @@ function ModeratorLobby({ state, dispatch }: ModeratorViewProps) {
     <main className="moderator-layout lobby-moderator">
       <div className="phase-heading lobby-heading">
         <div>
-          <p className="eyebrow">Lobby · Mô phỏng cùng trình duyệt</p>
+          <p className="eyebrow">Lobby · Danh sách thành viên chính thức</p>
           <h1>PHÒNG {state.roomCode.slice(0, 3)} {state.roomCode.slice(3)}</h1>
           <p>
             Người chơi chọn <strong>Vào phòng</strong> ở trang chủ và nhập mã này.

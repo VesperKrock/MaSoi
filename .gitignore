@@ -5,3 +5,5 @@ coverage/
 .DS_Store
 prompts/
 matkhau-supabase.txt
+supabase/.temp/
+supabase/.branches/

@@ -43,11 +43,17 @@ function RoomExperience({
     return (
       <main className="entry-viewport zero-scroll-surface" data-player-viewport>
         <div className="entry-copy">
-          <p className="eyebrow">Phòng local</p>
+          <p className="eyebrow">
+            {transport.kind === 'LOCAL' ? 'Phòng DEV local' : 'Phòng máy chủ'}
+          </p>
           <h1>{error ? 'Không thể mở phòng' : 'Đang mở phòng…'}</h1>
           {error && <p>{error}</p>}
         </div>
-        <a className="button primary link-button" href="/" data-required-control>
+        <a
+          className="button primary link-button"
+          href={transport.kind === 'LOCAL' ? '/?transport=local' : '/'}
+          data-required-control
+        >
           Về trang chủ
         </a>
       </main>
@@ -68,7 +74,7 @@ function RoomExperience({
   }
 
   return (
-    <AppShell roomCode={snapshot.state.roomCode}>
+    <AppShell roomCode={snapshot.state.roomCode} transportKind={transport.kind}>
       {error && (
         <div className="error-banner" role="alert">
           <span>{error}</span>
@@ -111,5 +117,5 @@ export function App({ transport }: AppProps) {
   const screen = params.get('screen')
   if (screen === 'create') return <CreateRoomView transport={transport} />
   if (screen === 'join') return <JoinRoomView transport={transport} />
-  return <LandingView />
+  return <LandingView transportKind={transport.kind} />
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { AppShell } from '../../components/app-shell'
 import {
   countSelectedRoles,
@@ -29,6 +29,7 @@ const groupOrder: RoleMarketGroup[] = [
 ]
 
 export function CreateRoomView({ transport }: CreateRoomViewProps) {
+  const createRequestId = useRef(crypto.randomUUID())
   const [seatCount, setSeatCount] = useState(7)
   const [composition, setComposition] = useState<RoleComposition>(() =>
     defaultRoleComposition(7),
@@ -57,18 +58,21 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
     if (!validation.valid) return
     setSubmitting(true)
     setError('')
-    const result = await transport.createRoom({
-      seatCount,
-      roleComposition: composition,
-      wolfPolicy,
-    })
+    const result = await transport.createRoom(
+      {
+        seatCount,
+        roleComposition: composition,
+        wolfPolicy,
+      },
+      createRequestId.current,
+    )
     setSubmitting(false)
     if (!result.ok || !result.roomId) {
-      setError(result.error ?? 'Không thể tạo phòng local.')
+      setError(result.error ?? 'Không thể tạo phòng.')
       return
     }
     window.location.assign(
-      `?room=${encodeURIComponent(result.roomId)}&as=moderator`,
+      `?room=${encodeURIComponent(result.roomId)}&as=moderator${transport.kind === 'LOCAL' ? '&transport=local' : ''}`,
     )
   }
 
@@ -80,7 +84,7 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
         : 'Đội hình đã đủ để tạo phòng.'
 
   return (
-    <AppShell>
+    <AppShell transportKind={transport.kind}>
       <main className="create-room-layout">
         <header className="create-heading">
           <div>

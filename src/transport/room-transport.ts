@@ -12,6 +12,20 @@ export interface CreateRoomResult extends DispatchResult {
 
 export const roomTransportErrorCodes = {
   localConcurrencyUnsupported: 'LOCAL_CONCURRENCY_UNSUPPORTED',
+  backendUnavailable: 'BACKEND_UNAVAILABLE',
+  unauthorized: 'UNAUTHORIZED',
+  roomNotFound: 'ROOM_NOT_FOUND',
+  roomFull: 'ROOM_FULL',
+  roomLocked: 'ROOM_LOCKED',
+  duplicateName: 'DUPLICATE_NAME',
+  invalidName: 'INVALID_NAME',
+  invalidRoomConfig: 'INVALID_ROOM_CONFIG',
+  invalidCreateRequest: 'INVALID_CREATE_REQUEST',
+  notModerator: 'NOT_MODERATOR',
+  roomNotReady: 'ROOM_NOT_READY',
+  invalidAssignment: 'INVALID_ASSIGNMENT',
+  alreadyDealt: 'ALREADY_DEALT',
+  serverGameplayUnavailable: 'SERVER_GAMEPLAY_UNAVAILABLE',
 } as const
 
 export type RoomTransportErrorCode =
@@ -29,10 +43,24 @@ export interface JoinRoomResult extends DispatchResult {
   playerId?: string
 }
 
+export type RoomTransportKind = 'LOCAL' | 'SUPABASE' | 'UNAVAILABLE'
+
+export interface ResumeRoomResult {
+  kind: 'MODERATOR' | 'PLAYER'
+  roomId: string
+  roomCode: string
+  playerId?: string
+}
+
 export interface RoomTransport {
-  createRoom(setup: RoomSetupInput): Promise<CreateRoomResult>
+  readonly kind: RoomTransportKind
+  createRoom(
+    setup: RoomSetupInput,
+    requestId?: string,
+  ): Promise<CreateRoomResult>
   validateRoomCode(code: string): Promise<RoomJoinability>
   joinRoom(code: string, name: string): Promise<JoinRoomResult>
+  resumeCurrentRoom?(): Promise<ResumeRoomResult | null>
   getSnapshot(roomId: string, audience: RoomAudience): Promise<RoomSnapshot>
   subscribe(
     roomId: string,
