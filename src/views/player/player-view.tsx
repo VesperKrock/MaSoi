@@ -69,7 +69,13 @@ function NeutralScreen({
   onRecheck: () => void
 }) {
   const waitingForStart = snapshot.lifecycle === 'ROLE_REVEAL'
-  const copy = waitingForStart
+  const copy = !snapshot.self.alive
+    ? {
+        eyebrow: `ĐÊM ${snapshot.dayNumber}`,
+        title: 'Bạn đã chết.',
+        body: 'Hãy úp điện thoại xuống và tiếp tục theo dõi bàn chơi.',
+      }
+    : waitingForStart
     ? {
         eyebrow: `PHÒNG ${snapshot.roomCode}`,
         title: 'Đã nhớ vai trò.',
@@ -105,7 +111,7 @@ function NeutralScreen({
       <div className="moon-mark" aria-hidden="true">◐</div>
       <h1>{copy.title}</h1>
       <p>{copy.body}</p>
-      {snapshot.roleIdentity && (
+      {snapshot.roleIdentity && snapshot.self.alive && (
         <button className="quiet-action" onClick={onRecheck} data-required-control>
           Xem lại vai trò
         </button>
@@ -148,6 +154,18 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
         playerId: snapshot.self.id,
         targetId,
       })
+    } else if (targetId && action.mode === 'SEER_SELECT') {
+      void dispatch({
+        type: 'SUBMIT_SEER_INSPECTION',
+        playerId: snapshot.self.id,
+        targetId,
+      })
+    } else if (targetId && action.mode === 'PROTECTOR_SELECT') {
+      void dispatch({
+        type: 'SUBMIT_PROTECTOR_TARGET',
+        playerId: snapshot.self.id,
+        targetId,
+      })
     } else if (targetId) {
       void dispatch({
         type: 'SUBMIT_TARGET_ACTION',
@@ -157,11 +175,38 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
     }
   }
 
+  if (action.mode === 'SEER_RESULT' && action.inspectedTarget && action.seerResult) {
+    return (
+      <section className="player-action compact-action seer-result-player">
+        <header>
+          <p className="eyebrow">KẾT QUẢ KIỂM TRA</p>
+          <h1>{action.inspectedTarget.alias}</h1>
+          <p>Ghế {String(action.inspectedTarget.seat).padStart(2, '0')}</p>
+        </header>
+        <div className="seer-result" aria-live="polite">
+          {action.seerResult === 'WOLF' ? 'SÓI' : 'KHÔNG PHẢI SÓI'}
+        </div>
+        <button
+          className="button primary full action-confirm"
+          onClick={() =>
+            dispatch({
+              type: 'ACKNOWLEDGE_SEER_RESULT',
+              playerId: snapshot.self.id,
+            })
+          }
+          data-required-control
+        >
+          Đã nhớ · Úp máy
+        </button>
+      </section>
+    )
+  }
+
   return (
     <section className="player-action compact-action">
       <header>
         <p className="eyebrow">
-          {action.round === 'REVOTE' ? 'CHỌN LẠI · 10 GIÂY' : `HÀNH ĐỘNG · ${action.roleName}`}
+          {action.round === 'REVOTE' ? 'CHỌN LẠI · 10 GIÂY' : 'HÀNH ĐỘNG ĐÊM'}
         </p>
         <h1>Chọn mục tiêu</h1>
         <p>{action.instructions}</p>

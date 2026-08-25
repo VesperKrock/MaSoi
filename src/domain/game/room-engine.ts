@@ -4,8 +4,12 @@ import { getNightRoleIds, roleDefinitions } from '../roles/role-definitions'
 import {
   getEligibleDayTargets,
   getEligibleRoleTargets,
+  getEligibleWolfGroupActors,
+  getEligibleWolfTargets,
   getLivingHolders,
+  getRoleIdForPlayer,
 } from '../actions/target-rules'
+import { detectForSeer } from '../gameplay/night-rules'
 import { resolveDayVote } from '../voting/day-vote'
 import { systemRandom, type RandomSource } from '../voting/random'
 import {
@@ -447,13 +451,6 @@ function callNightRole(
   if (call.status !== 'NOT_CALLED') {
     fail('Role này đã được gọi trong đêm hiện tại.')
   }
-  const nextCall = state.night.calls.find(
-    (entry) => entry.status === 'NOT_CALLED',
-  )
-  if (nextCall?.roleId !== roleId) {
-    fail('Hãy gọi role theo thứ tự nghi thức đã cấu hình.')
-  }
-
   call.status = 'CALLED'
   call.calledAt = environment.now()
   state.night.activeRoleId = roleId
@@ -463,7 +460,10 @@ function callNightRole(
   if (!definition) {
     fail('Mechanics của role này chưa được triển khai trong MS-0B.')
   }
-  const eligibleActorIds = getLivingHolders(state, roleId)
+  const eligibleActorIds =
+    roleId === 'werewolf'
+      ? getEligibleWolfGroupActors(state)
+      : getLivingHolders(state, roleId)
 
   // A dead role deliberately produces no player action, but the call remains
   // active until the Moderator confirms it. No public state identifies why.
@@ -471,7 +471,10 @@ function callNightRole(
     return
   }
 
-  const eligibleTargetIds = getEligibleRoleTargets(state, roleId)
+  const eligibleTargetIds =
+    roleId === 'werewolf'
+      ? getEligibleWolfTargets(state)
+      : getEligibleRoleTargets(state, roleId, eligibleActorIds[0])
   const action: NightAction = {
     id: environment.nextId(),
     roleId,
@@ -596,6 +599,14 @@ function submitTargetAction(
     actorRoleId: action.roleId,
     targetPlayerId: targetId,
   })
+  if (action.roleId === 'protector') {
+    appendEvent(state, environment, 'PROTECTOR_INTENT', {
+      actorPlayerId: playerId,
+      actorRoleId: 'protector',
+      targetPlayerId: targetId,
+      metadata: { nightNumber: state.dayNumber, intentOnly: true },
+    })
+  }
 
   if (allActorsConfirmed(action)) {
     action.status = 'COMPLETED'
@@ -608,6 +619,83 @@ function submitTargetAction(
     })
     finishCall(state, action.roleId, environment)
   }
+}
+
+function submitSeerInspection(
+  state: RoomState,
+  playerId: PlayerId,
+  targetId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.kind !== 'SELECT_TARGET' || action.roleId !== 'seer') {
+    fail('Đây không phải lượt kiểm tra của Tiên Tri.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Người chơi không đủ điều kiện kiểm tra.')
+  }
+  if (action.seer) {
+    fail('Tiên Tri chỉ được kiểm tra một người mỗi đêm.')
+  }
+  const eligibleTargets = getEligibleRoleTargets(state, 'seer', playerId)
+  if (!eligibleTargets.includes(targetId)) {
+    fail('Mục tiêu không hợp lệ cho Tiên Tri.')
+  }
+  const targetRoleId = getRoleIdForPlayer(state, targetId)
+  if (!targetRoleId) fail('Mục tiêu chưa có vai trò máy chủ.')
+
+  action.selections[playerId] = targetId
+  action.seer = {
+    targetId,
+    result: detectForSeer(targetRoleId),
+    acknowledged: false,
+  }
+  appendEvent(state, environment, 'SEER_INSPECTION', {
+    actorPlayerId: playerId,
+    actorRoleId: 'seer',
+    targetPlayerId: targetId,
+    resolution: action.seer.result,
+  })
+}
+
+function acknowledgeSeerResult(
+  state: RoomState,
+  playerId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.kind !== 'SELECT_TARGET' || action.roleId !== 'seer') {
+    fail('Đây không phải lượt kết quả của Tiên Tri.')
+  }
+  if (!action.eligibleActorIds.includes(playerId) || !action.seer) {
+    fail('Không có kết quả Tiên Tri để xác nhận.')
+  }
+  if (!action.confirmedActorIds.includes(playerId)) {
+    action.confirmedActorIds.push(playerId)
+  }
+  action.seer.acknowledged = true
+  action.status = 'COMPLETED'
+  action.completedAt = environment.now()
+  appendEvent(state, environment, 'SEER_RESULT_ACKNOWLEDGED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'seer',
+    targetPlayerId: action.seer.targetId,
+    resolution: action.seer.result,
+  })
+  finishCall(state, 'seer', environment)
+}
+
+function submitProtectorTarget(
+  state: RoomState,
+  playerId: PlayerId,
+  targetId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.roleId !== 'protector') {
+    fail('Đây không phải lượt chọn của Bảo Vệ.')
+  }
+  submitTargetAction(state, playerId, targetId, environment)
 }
 
 function resolveWolfVote(
@@ -919,6 +1007,25 @@ export function applyRoomCommand(
       break
     case 'SUBMIT_TARGET_ACTION':
       submitTargetAction(
+        state,
+        command.playerId,
+        command.targetId,
+        environment,
+      )
+      break
+    case 'SUBMIT_SEER_INSPECTION':
+      submitSeerInspection(
+        state,
+        command.playerId,
+        command.targetId,
+        environment,
+      )
+      break
+    case 'ACKNOWLEDGE_SEER_RESULT':
+      acknowledgeSeerResult(state, command.playerId, environment)
+      break
+    case 'SUBMIT_PROTECTOR_TARGET':
+      submitProtectorTarget(
         state,
         command.playerId,
         command.targetId,

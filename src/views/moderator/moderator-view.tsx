@@ -301,6 +301,17 @@ function WolfActionPanel({
 }
 
 function ActionResult({ state, action }: { state: RoomState; action: NightAction }) {
+  if (action.seer) {
+    return (
+      <div className="final-target">
+        <span>
+          Tiên Tri · {action.seer.result === 'WOLF' ? 'SÓI' : 'KHÔNG PHẢI SÓI'}
+        </span>
+        <strong>{playerName(state, action.seer.targetId)}</strong>
+      </div>
+    )
+  }
+
   if (action.result) {
     return (
       <div className="final-target">
@@ -330,9 +341,6 @@ function ActionResult({ state, action }: { state: RoomState; action: NightAction
 function NightPanel({ state, dispatch }: ModeratorViewProps) {
   const night = state.night
   if (!night) return null
-  const firstPendingRoleId = night.calls.find(
-    (call) => call.status === 'NOT_CALLED',
-  )?.roleId
   const allComplete = night.calls.every((call) => call.status === 'COMPLETED')
 
   return (
@@ -360,15 +368,18 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                 <div>
                   <strong>{displayName}</strong>
                   <small>
-                    {call.status === 'NOT_CALLED' ? 'Chưa gọi' : 'Đã gọi'}
+                    {call.status === 'NOT_CALLED'
+                      ? 'Chưa gọi'
+                      : call.status === 'COMPLETED'
+                        ? 'Đã gọi'
+                        : 'Đang gọi'}
                   </small>
                 </div>
                 {call.status === 'NOT_CALLED' ? (
                   <button
                     className="button call-button"
                     disabled={
-                      night.activeRoleId !== null ||
-                      firstPendingRoleId !== call.roleId
+                      night.activeRoleId !== null
                     }
                     onClick={() =>
                       dispatch({ type: 'CALL_NIGHT_ROLE', roleId: call.roleId })
@@ -378,7 +389,7 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   </button>
                 ) : (
                   <span className={`call-status status-${call.status.toLowerCase()}`}>
-                    ✓ Đã gọi
+                    {call.status === 'COMPLETED' ? '✓ Đã gọi' : '… Đang gọi'}
                   </span>
                 )}
               </div>
@@ -386,7 +397,7 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
               {isActive && action?.kind === 'WOLF_VOTE' && (
                 <WolfActionPanel state={state} action={action} dispatch={dispatch} />
               )}
-              {isActive && action?.kind !== 'WOLF_VOTE' && (
+              {isActive && !action && (
                 <div className="action-monitor silent-call">
                   <p>
                     Khi hành động hoặc nhịp gọi ngoài đời đã xong, xác nhận để
@@ -403,6 +414,11 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   >
                     Xác nhận đã gọi
                   </button>
+                </div>
+              )}
+              {isActive && action?.kind === 'SELECT_TARGET' && (
+                <div className="action-monitor silent-call">
+                  <p>Đang chờ hành động riêng trên điện thoại người chơi.</p>
                 </div>
               )}
               {action && <ActionResult state={state} action={action} />}

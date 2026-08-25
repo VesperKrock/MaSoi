@@ -26,6 +26,22 @@ export const roomTransportErrorCodes = {
   invalidAssignment: 'INVALID_ASSIGNMENT',
   alreadyDealt: 'ALREADY_DEALT',
   serverGameplayUnavailable: 'SERVER_GAMEPLAY_UNAVAILABLE',
+  notInGame: 'NOT_IN_GAME',
+  notNight: 'NOT_NIGHT',
+  roleNotConfigured: 'ROLE_NOT_CONFIGURED',
+  callAlreadyActive: 'CALL_ALREADY_ACTIVE',
+  callNotActive: 'CALL_NOT_ACTIVE',
+  callAlreadyCompleted: 'CALL_ALREADY_COMPLETED',
+  callHasEligibleActor: 'CALL_HAS_ELIGIBLE_ACTOR',
+  notPlayer: 'NOT_PLAYER',
+  wrongRole: 'WRONG_ROLE',
+  playerDead: 'PLAYER_DEAD',
+  invalidTarget: 'INVALID_TARGET',
+  sameProtectorTarget: 'SAME_PROTECTOR_TARGET',
+  wolfNoBiteCapableMember: 'WOLF_NO_BITE_CAPABLE_MEMBER',
+  wolfRoundNotReady: 'WOLF_ROUND_NOT_READY',
+  revoteNotReady: 'REVOTE_NOT_READY',
+  revoteExpired: 'REVOTE_EXPIRED',
 } as const
 
 export type RoomTransportErrorCode =

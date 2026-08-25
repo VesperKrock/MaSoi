@@ -266,6 +266,8 @@ try {
   await seer.goto(urlByPlayer.get(seerId), { waitUntil: 'domcontentloaded' })
   await seer.waitForSelector('[data-surface="night_action"]')
   await seer.click('.target:first-child')
+  await seer.waitForSelector('.seer-result-player')
+  await seer.click('.seer-result-player .action-confirm')
   await seer.waitForSelector('[data-surface="neutral"]')
   await seer.close()
 

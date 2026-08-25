@@ -9,7 +9,7 @@ export interface RoleDefinition {
   nightOrder: number | null
   firstNightOnly: boolean
   actionType: 'WOLF_VOTE' | 'SELECT_TARGET' | 'NONE'
-  targetRule: 'LIVING_NON_WOLF' | 'LIVING_OTHER' | 'NONE'
+  targetRule: 'LIVING_NON_WOLF' | 'LIVING_OTHER' | 'LIVING_ANY' | 'NONE'
   description: string
   instructions: string
 }
@@ -39,7 +39,20 @@ export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
     actionType: 'SELECT_TARGET',
     targetRule: 'LIVING_OTHER',
     description: 'Mỗi đêm chọn một người để Quản trò kiểm tra.',
-    instructions: 'Chọn một người rồi úp điện thoại xuống.',
+    instructions: 'Chọn một người để kiểm tra.',
+  },
+  protector: {
+    id: 'protector',
+    displayName: 'Bảo Vệ',
+    team: 'VILLAGE',
+    cardAsset: null,
+    actsAtNight: true,
+    nightOrder: 30,
+    firstNightOnly: false,
+    actionType: 'SELECT_TARGET',
+    targetRule: 'LIVING_ANY',
+    description: 'Mỗi đêm chọn một người để bảo vệ.',
+    instructions: 'Chọn một người để bảo vệ đêm nay.',
   },
   villager: {
     id: 'villager',

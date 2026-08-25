@@ -32,6 +32,14 @@ export interface PlayerActionSnapshot {
   candidates: Player[]
   currentTargetId?: PlayerId | null
   hasSelected: boolean
+  mode?:
+    | 'WOLF_BALLOT'
+    | 'WOLF_REVOTE'
+    | 'SEER_SELECT'
+    | 'SEER_RESULT'
+    | 'PROTECTOR_SELECT'
+  inspectedTarget?: Player
+  seerResult?: 'WOLF' | 'NON_WOLF'
 }
 
 export interface PlayerRoomSnapshot {
@@ -111,6 +119,22 @@ function projectNightAction(
     candidates: targetIds.map((targetId) => playerById(state, targetId)),
     currentTargetId: hasSelected ? action.selections[player.id] : undefined,
     hasSelected,
+    mode:
+      action.kind === 'WOLF_VOTE'
+        ? action.wolf?.round === 'REVOTE'
+          ? 'WOLF_REVOTE'
+          : 'WOLF_BALLOT'
+        : action.roleId === 'seer'
+          ? action.seer
+            ? 'SEER_RESULT'
+            : 'SEER_SELECT'
+          : action.roleId === 'protector'
+            ? 'PROTECTOR_SELECT'
+            : undefined,
+    inspectedTarget: action.seer
+      ? playerById(state, action.seer.targetId)
+      : undefined,
+    seerResult: action.seer?.result,
   }
 }
 

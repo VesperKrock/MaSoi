@@ -1,6 +1,10 @@
 import { roleDefinitions } from '../roles/role-definitions'
 import { classicRoleById } from '../roles/classic-catalog'
 import type { PlayerId, RoleId, RoomState } from '../game/types'
+import {
+  canProtectorTarget,
+  getWolfGroupVoterIds,
+} from '../gameplay/night-rules'
 
 export function getRoleIdForPlayer(
   state: RoomState,
@@ -27,6 +31,37 @@ export function getLivingHolders(
     .map((assignment) => assignment.playerId)
 }
 
+function roleHolders(state: RoomState) {
+  return state.roleAssignments.map((assignment) => ({
+    playerId: assignment.playerId,
+    roleId: assignment.roleId,
+    alive:
+      state.players.find((player) => player.id === assignment.playerId)?.alive ??
+      false,
+  }))
+}
+
+export function getEligibleWolfGroupActors(state: RoomState): PlayerId[] {
+  return getWolfGroupVoterIds(roleHolders(state))
+}
+
+export function getEligibleWolfTargets(state: RoomState): PlayerId[] {
+  const actorIds = new Set(getEligibleWolfGroupActors(state))
+  return state.players
+    .filter((player) => player.alive && !actorIds.has(player.id))
+    .map((player) => player.id)
+}
+
+function previousProtectorTargetId(state: RoomState): PlayerId | undefined {
+  return [...state.journal]
+    .reverse()
+    .find(
+      (event) =>
+        event.type === 'PROTECTOR_INTENT' &&
+        event.dayNumber === state.dayNumber - 1,
+    )?.targetPlayerId
+}
+
 export function getEligibleRoleTargets(
   state: RoomState,
   roleId: RoleId,
@@ -47,6 +82,15 @@ export function getEligibleRoleTargets(
 
       if (definition.targetRule === 'LIVING_OTHER') {
         return player.id !== actorId
+      }
+
+      if (definition.targetRule === 'LIVING_ANY') {
+        return canProtectorTarget({
+          nightNumber: state.dayNumber,
+          targetId: player.id,
+          targetAlive: player.alive,
+          previousNightTargetId: previousProtectorTargetId(state),
+        })
       }
 
       return false

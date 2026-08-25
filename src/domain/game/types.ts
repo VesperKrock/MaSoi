@@ -60,6 +60,11 @@ export interface NightAction {
   selections: Record<PlayerId, PlayerId | null>
   confirmedActorIds: PlayerId[]
   wolf?: WolfActionDetails
+  seer?: {
+    targetId: PlayerId
+    result: 'WOLF' | 'NON_WOLF'
+    acknowledged: boolean
+  }
   result?: FinalTargetResult
   openedAt: number
   completedAt?: number
@@ -92,6 +97,7 @@ export type JournalEventType =
   | 'ROOM_LOCKED'
   | 'ROLE_ASSIGNED'
   | 'ROLE_CALLED'
+  | 'CALL_COMPLETED'
   | 'ROLE_ACTION_OPENED'
   | 'ROLE_ACTION_SUBMITTED'
   | 'TARGET_SELECTED'
@@ -101,6 +107,10 @@ export type JournalEventType =
   | 'WOLF_REVOTE_STARTED'
   | 'WOLF_REVOTE_CHANGED'
   | 'WOLF_RANDOM_RESOLUTION'
+  | 'WOLF_FINAL_TARGET'
+  | 'SEER_INSPECTION'
+  | 'SEER_RESULT_ACKNOWLEDGED'
+  | 'PROTECTOR_INTENT'
   | 'DAY_VOTE_OPENED'
   | 'DAY_VOTE_CHANGED'
   | 'DAY_VOTE_CLOSED'
@@ -161,6 +171,9 @@ export type RoomCommand =
   | { type: 'CAST_WOLF_VOTE'; playerId: PlayerId; targetId: PlayerId | null }
   | { type: 'CONFIRM_NIGHT_ACTION'; playerId: PlayerId }
   | { type: 'SUBMIT_TARGET_ACTION'; playerId: PlayerId; targetId: PlayerId }
+  | { type: 'SUBMIT_SEER_INSPECTION'; playerId: PlayerId; targetId: PlayerId }
+  | { type: 'ACKNOWLEDGE_SEER_RESULT'; playerId: PlayerId }
+  | { type: 'SUBMIT_PROTECTOR_TARGET'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'RESOLVE_WOLF_VOTE'; atDeadline?: boolean }
   | { type: 'COMPLETE_NIGHT_CALL'; roleId: RoleId }
   | { type: 'START_DAY' }

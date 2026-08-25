@@ -48,6 +48,9 @@ const surfaces = [
   'reveal',
   'neutral',
   'action',
+  'seer-select',
+  'seer-result',
+  'protector-action',
   'vote',
   'role-recheck',
 ]
@@ -195,7 +198,7 @@ try {
       await page.setViewport({ ...viewport, deviceScaleFactor: 1, isMobile: true, hasTouch: true })
       await openSurface(page, surface)
       const inspection = await page.evaluate(inspectPlayerLayout)
-      results.push({ surface, viewport: `${viewport.width}x${viewport.height}`, ...inspection })
+      results.push({ ...inspection, surface, viewport: `${viewport.width}x${viewport.height}` })
       await page.close()
     }
   }

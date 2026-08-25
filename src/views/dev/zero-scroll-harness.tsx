@@ -74,6 +74,53 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
+  if (surface === 'seer-select') {
+    return {
+      ...baseSnapshot,
+      nightAction: {
+        id: 'qa-seer-action',
+        kind: 'SELECT_TARGET',
+        roleId: 'seer',
+        roleName: 'Tiên Tri',
+        instructions: 'Chọn một người để kiểm tra.',
+        mode: 'SEER_SELECT',
+        candidates: players.slice(1),
+        hasSelected: false,
+      },
+    }
+  }
+  if (surface === 'seer-result') {
+    return {
+      ...baseSnapshot,
+      nightAction: {
+        id: 'qa-seer-result',
+        kind: 'SELECT_TARGET',
+        roleId: 'seer',
+        roleName: 'Tiên Tri',
+        instructions: 'Ghi nhớ kết quả.',
+        mode: 'SEER_RESULT',
+        candidates: [],
+        hasSelected: true,
+        inspectedTarget: players[1],
+        seerResult: 'NON_WOLF',
+      },
+    }
+  }
+  if (surface === 'protector-action') {
+    return {
+      ...baseSnapshot,
+      nightAction: {
+        id: 'qa-protector-action',
+        kind: 'SELECT_TARGET',
+        roleId: 'protector',
+        roleName: 'Bảo Vệ',
+        instructions: 'Chọn một người để bảo vệ đêm nay.',
+        mode: 'PROTECTOR_SELECT',
+        candidates: players.slice(0, 15),
+        hasSelected: false,
+      },
+    }
+  }
   if (surface === 'vote') {
     return {
       ...baseSnapshot,
