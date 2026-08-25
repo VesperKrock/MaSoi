@@ -99,11 +99,6 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
             <h1>Tạo phòng</h1>
             <p>Chọn đúng số lá vai trò trước khi mở Lobby.</p>
           </div>
-          <div className={`selection-meter ${validation.valid ? 'complete' : ''}`}>
-            <span>Đã chọn</span>
-            <strong>{selectedCount} / {seatCount}</strong>
-            <small>{countMessage}</small>
-          </div>
         </header>
 
         <section className="panel room-basics">
@@ -129,6 +124,11 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
               <option value="REVOTE_10S">Chọn lại trong 10 giây</option>
             </select>
           </label>
+          <div className={`selection-meter ${validation.valid ? 'complete' : ''}`}>
+            <span>Đã chọn</span>
+            <strong>{selectedCount} / {seatCount}</strong>
+            <small>{countMessage}</small>
+          </div>
         </section>
 
         <div className="role-market">

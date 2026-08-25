@@ -66,6 +66,53 @@ async function authStorage(page) {
   })
 }
 
+async function inspectPlayerViewport(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector('[data-player-viewport]')
+    const requiredControls = [...(root?.querySelectorAll('[data-required-control]') ?? [])]
+      .filter((element) => {
+        const style = getComputedStyle(element)
+        return style.display !== 'none' && style.visibility !== 'hidden'
+      })
+      .map((element) => element.getBoundingClientRect())
+    const nestedScroll = root
+      ? [...root.querySelectorAll('*')].some((element) => {
+          const style = getComputedStyle(element)
+          return /^(auto|scroll)$/.test(style.overflowX) || /^(auto|scroll)$/.test(style.overflowY)
+        })
+      : true
+    return {
+      surface: root?.dataset.surface ?? null,
+      documentScroll:
+        document.documentElement.scrollHeight > innerHeight + 1 ||
+        document.documentElement.scrollWidth > innerWidth + 1,
+      rootScroll: root
+        ? root.scrollHeight > root.clientHeight + 1 || root.scrollWidth > root.clientWidth + 1
+        : true,
+      nestedScroll,
+      minRequiredWidth: requiredControls.length
+        ? Math.min(...requiredControls.map((rect) => rect.width))
+        : null,
+      minRequiredHeight: requiredControls.length
+        ? Math.min(...requiredControls.map((rect) => rect.height))
+        : null,
+    }
+  })
+}
+
+function assertPlayerViewport(metrics, label) {
+  invariant(
+    !metrics.documentScroll && !metrics.rootScroll && !metrics.nestedScroll,
+    `${label} violates zero-scroll.`,
+  )
+  if (metrics.minRequiredWidth !== null && metrics.minRequiredHeight !== null) {
+    invariant(
+      metrics.minRequiredWidth >= 44 && metrics.minRequiredHeight >= 44,
+      `${label} has a required control smaller than 44x44.`,
+    )
+  }
+}
+
 const executablePath = browserExecutable()
 invariant(executablePath, 'Không tìm thấy Chrome/Edge cho deployed Pages QA.')
 invariant(publicUrl.protocol === 'https:', 'Deployed QA chỉ được chạy trên HTTPS.')
@@ -89,6 +136,8 @@ try {
   const playerContext = await browser.createBrowserContext()
   const moderator = await moderatorContext.newPage()
   const player = await playerContext.newPage()
+  await moderator.setViewport({ width: 1440, height: 900 })
+  await player.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
   moderator.setDefaultTimeout(45_000)
   player.setDefaultTimeout(45_000)
   await observePage(moderator, evidence)
@@ -102,6 +151,7 @@ try {
     createHref: document.querySelector('.entry-actions a:first-child')?.getAttribute('href'),
     joinHref: document.querySelector('.entry-actions a:last-child')?.getAttribute('href'),
     authority: document.querySelector('.local-truth')?.textContent ?? '',
+    body: document.body.textContent ?? '',
     localRegistry: localStorage.getItem('masoi.ms0b.rooms.v1'),
     expectedBasePath,
   }), basePath)
@@ -110,7 +160,22 @@ try {
   invariant(landing.createHref === `${basePath}?screen=create`, 'Public Create link sai base path.')
   invariant(landing.joinHref === `${basePath}?screen=join`, 'Public Join link sai base path.')
   invariant(landing.authority.includes('nhiều thiết bị'), 'Public product không hiển thị server authority.')
+  invariant(!landing.body.includes('DEV LOCAL'), 'Public product displays the DEV local label.')
+  invariant(!landing.body.includes('Development inspector'), 'Public product displays the development inspector.')
   invariant(landing.localRegistry === null, 'Public product đã tạo local room registry.')
+
+  const productionBundles = await moderator.evaluate(async () => {
+    const scripts = [...document.scripts]
+      .map((script) => script.src)
+      .filter(Boolean)
+    return Promise.all(scripts.map(async (url) => (await fetch(url)).text()))
+  })
+  invariant(
+    productionBundles.every(
+      (bundle) => !bundle.includes('Development inspector') && !bundle.includes('Match journal'),
+    ),
+    'Public production bundle still contains development inspector presentation.',
+  )
 
   const cards = await moderator.evaluate(async ({ expectedBasePath, files }) => {
     return Promise.all(files.map(async (filename) => {
@@ -125,6 +190,41 @@ try {
   await moderator.goto(new URL('?screen=create', publicUrl).href, { waitUntil: 'networkidle0' })
   await moderator.waitForSelector('.create-room-layout')
   invariant(new URL(moderator.url()).pathname === basePath, 'Create query route làm mất base path.')
+  const compactCreate = await moderator.evaluate(() => {
+    const title = document.querySelector('.create-heading h1')
+    const market = document.querySelector('.role-market')
+    const quantity = document.querySelector('.quantity-control button')
+    const singleton = document.querySelector('.singleton-toggle')
+    const quantityRect = quantity?.getBoundingClientRect()
+    const singletonRect = singleton?.getBoundingClientRect()
+    return {
+      documentHeight: document.documentElement.scrollHeight,
+      titleFontSize: title ? Number.parseFloat(getComputedStyle(title).fontSize) : null,
+      marketBottom: market?.getBoundingClientRect().bottom ?? null,
+      quantity: quantityRect ? { width: quantityRect.width, height: quantityRect.height } : null,
+      singleton: singletonRect ? { width: singletonRect.width, height: singletonRect.height } : null,
+    }
+  })
+  invariant(
+    compactCreate.documentHeight <= 901,
+    `Public Create does not use the approved compact layout: ${compactCreate.documentHeight}px.`,
+  )
+  invariant(
+    compactCreate.titleFontSize !== null && compactCreate.titleFontSize <= 48,
+    'Public Create title does not use the approved operational scale.',
+  )
+  invariant(
+    compactCreate.marketBottom !== null && compactCreate.marketBottom <= 900,
+    'Public role market is outside the desktop viewport.',
+  )
+  invariant(
+    compactCreate.quantity?.width >= 44 && compactCreate.quantity?.height >= 44,
+    'Public quantity control is smaller than 44x44.',
+  )
+  invariant(
+    compactCreate.singleton?.width >= 44 && compactCreate.singleton?.height >= 44,
+    'Public singleton control is smaller than 44x44.',
+  )
   await moderator.click('.create-room-footer .button.primary')
   await moderator.waitForFunction(() => new URL(location.href).searchParams.get('as') === 'moderator')
   await moderator.waitForSelector('.lobby-moderator')
@@ -138,16 +238,22 @@ try {
 
   await player.goto(new URL('?screen=join', publicUrl).href, { waitUntil: 'networkidle0' })
   await player.waitForSelector('.join-card')
+  const joinViewport = await inspectPlayerViewport(player)
+  assertPlayerViewport(joinViewport, 'Public Join')
   invariant(new URL(player.url()).pathname === basePath, 'Join query route làm mất base path.')
   invariant(await player.$('.name-modal') === null, 'Name modal mở trước room lookup.')
   await player.type('.room-code-field input', roomCode)
   await player.click('.join-card button')
   await player.waitForSelector('.name-modal')
+  const nameViewport = await inspectPlayerViewport(player)
+  assertPlayerViewport(nameViewport, 'Public Name Modal')
   const playerName = `D1 Player ${Date.now().toString().slice(-6)}`
   await player.type('.name-modal input', playerName)
   await player.click('.name-modal .button.primary')
   await player.waitForFunction(() => new URL(location.href).searchParams.has('player'))
   await player.waitForSelector('[data-surface="lobby"]')
+  const lobbyViewport = await inspectPlayerViewport(player)
+  assertPlayerViewport(lobbyViewport, 'Public Player Lobby')
   const playerUrlBeforeRefresh = new URL(player.url())
   const playerId = playerUrlBeforeRefresh.searchParams.get('player')
   invariant(playerId && playerUrlBeforeRefresh.pathname === basePath, 'Join success URL sai player/base state.')
@@ -212,6 +318,15 @@ try {
     supabaseRpcAuthority: true,
     silentLocalFallback: false,
     pageErrors: 0,
+    approvedCompactCreate: compactCreate,
+    representativePlayerZeroScroll: {
+      join: joinViewport,
+      nameModal: nameViewport,
+      lobby: lobbyViewport,
+    },
+    developmentInspectorVisible: false,
+    developmentInspectorBundled: false,
+    devLocalLabelVisible: false,
   }, null, 2))
 } finally {
   await browser.close()

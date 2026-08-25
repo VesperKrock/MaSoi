@@ -35,6 +35,15 @@ function browserExecutable() {
 }
 
 const executablePath = browserExecutable()
+const productionJavaScript = fs.readdirSync('dist/assets')
+  .filter((filename) => filename.endsWith('.js'))
+  .map((filename) => fs.readFileSync(`dist/assets/${filename}`, 'utf8'))
+  .join('\n')
+invariant(
+  !productionJavaScript.includes('Development inspector') &&
+    !productionJavaScript.includes('Match journal'),
+  'Production bundle still contains development inspector presentation.',
+)
 invariant(executablePath, 'Không tìm thấy Chrome/Edge cho Pages base-path QA.')
 
 const server = await preview({
@@ -69,6 +78,7 @@ try {
     createHref: document.querySelector('.entry-actions a:first-child')?.getAttribute('href'),
     joinHref: document.querySelector('.entry-actions a:last-child')?.getAttribute('href'),
     authority: document.querySelector('.local-truth')?.textContent ?? '',
+    body: document.body.textContent ?? '',
     localRegistry: localStorage.getItem('masoi.ms0b.rooms.v1'),
     resources: performance.getEntriesByType('resource')
       .map((entry) => new URL(entry.name))
@@ -80,6 +90,8 @@ try {
   invariant(root.createHref === `${basePath}?screen=create`, 'Create link thoát khỏi Pages base path.')
   invariant(root.joinHref === `${basePath}?screen=join`, 'Join link thoát khỏi Pages base path.')
   invariant(root.authority.includes('nhiều thiết bị'), 'Production build không dùng Supabase transport.')
+  invariant(!root.body.includes('DEV LOCAL'), 'Production landing displays the DEV local label.')
+  invariant(!root.body.includes('Development inspector'), 'Production landing displays the development inspector.')
   invariant(root.localRegistry === null, 'Production build đã tạo local room registry.')
   invariant(
     root.resources.every((path) => path.startsWith(basePath)),
@@ -136,6 +148,8 @@ try {
     silentLocalFallback: false,
     asset404s: 0,
     pageErrors: 0,
+    developmentInspectorBundled: false,
+    devLocalLabelVisible: false,
   }, null, 2))
 } finally {
   await browser.close()

@@ -1477,7 +1477,7 @@ body:has(.zero-scroll-surface) {
 }
 
 .quiet-action {
-  min-height: 34px;
+  min-height: 44px;
   margin-top: clamp(16px, 5vh, 30px);
   padding: 5px 12px;
   border: 1px solid #37332d;
@@ -1698,5 +1698,431 @@ body:has(.zero-scroll-surface) {
 
   .compact-action .target-list {
     max-height: 210px;
+  }
+}
+
+/* MS-1A-U1 compact operational desk. Player composition remains unchanged. */
+
+.moderator-shell {
+  --op-gap-xs: 4px;
+  --op-gap-sm: 8px;
+  --op-gap-md: 12px;
+  --op-gap-lg: 16px;
+  --op-row: 48px;
+}
+
+.moderator-shell .topbar {
+  min-height: 58px;
+  padding: 7px clamp(14px, 3vw, 32px);
+}
+
+.moderator-shell .brand-mark {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+
+.moderator-shell .moderator-layout {
+  width: min(1240px, calc(100% - 28px));
+  padding: 24px 0 48px;
+}
+
+.moderator-shell .phase-heading {
+  min-height: 64px;
+  margin-bottom: 14px;
+}
+
+.moderator-shell .phase-heading h1 {
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 0.98;
+}
+
+.moderator-shell .phase-heading > div:first-child > p:last-child {
+  max-width: 620px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.moderator-shell .phase-pill,
+.moderator-shell .policy-chip {
+  padding: 6px 9px;
+}
+
+.moderator-shell .moderator-grid {
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.85fr);
+  gap: 14px;
+}
+
+.moderator-shell .panel {
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.moderator-shell section.panel {
+  padding: 16px;
+}
+
+.moderator-shell .section-title {
+  margin-bottom: 12px;
+}
+
+.moderator-shell .section-title h2 {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.moderator-shell .hint,
+.moderator-shell .ritual-note {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.moderator-shell .ritual-note {
+  margin: 0 0 12px;
+}
+
+.create-room-layout {
+  width: min(1240px, calc(100% - 28px));
+  padding: 24px 0 88px;
+}
+
+.create-heading {
+  margin-bottom: 12px;
+}
+
+.create-heading h1 {
+  font-size: clamp(36px, 4vw, 48px);
+  line-height: 1;
+}
+
+.create-heading > div:first-child > p:last-child {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.room-basics {
+  grid-template-columns: minmax(150px, 0.55fr) minmax(260px, 1.2fr) minmax(230px, 0.7fr);
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  align-items: end;
+}
+
+.create-room-layout .selection-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 63px;
+  padding: 8px 10px;
+  align-content: center;
+}
+
+.create-room-layout .selection-meter strong {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  margin: 0 0 0 10px;
+  align-self: center;
+  font-size: 24px;
+  white-space: nowrap;
+}
+
+.create-room-layout .selection-meter small {
+  line-height: 1.25;
+}
+
+.role-market {
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.role-market > .market-group:nth-child(1) {
+  grid-row: 1 / 4;
+  grid-column: 1;
+}
+
+.role-market > .market-group:nth-child(2) {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.role-market > .market-group:nth-child(3) {
+  grid-row: 2;
+  grid-column: 2;
+}
+
+.role-market > .market-group:nth-child(4) {
+  grid-row: 3;
+  grid-column: 2;
+}
+
+.market-group-heading {
+  min-height: 44px;
+  padding: 10px 13px;
+}
+
+.market-role {
+  min-height: 50px;
+  padding: 3px 12px;
+}
+
+.market-role summary strong {
+  font-size: 13px;
+}
+
+.quantity-control {
+  grid-template-columns: 44px 28px 44px;
+}
+
+.quantity-control button,
+.singleton-toggle {
+  min-height: 44px;
+}
+
+.quantity-control button {
+  width: 44px;
+}
+
+.create-room-footer {
+  min-height: 62px;
+  padding-top: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
+.lobby-heading h1 {
+  display: flex;
+  margin: 0;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.lobby-heading h1 > span {
+  color: var(--amber);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.lobby-heading h1 > strong {
+  font-family: 'Spectral', Georgia, serif;
+  font-size: clamp(34px, 4vw, 46px);
+  letter-spacing: -0.035em;
+}
+
+.lobby-heading-status,
+.reveal-heading-status {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.lobby-heading-status > strong,
+.reveal-heading-status > strong {
+  font-family: 'Spectral', Georgia, serif;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-heading-status > small,
+.reveal-heading-status > small {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.moderator-shell .lobby-roster-panel,
+.moderator-shell .lobby-control-panel,
+.moderator-shell .reveal-readiness {
+  padding: 16px;
+}
+
+.moderator-shell .lobby-count {
+  margin-bottom: 10px;
+}
+
+.moderator-shell .lobby-count strong {
+  font-size: 24px;
+}
+
+.moderator-shell .joined-list {
+  gap: 6px;
+}
+
+.moderator-shell .joined-seat {
+  min-height: 44px;
+  padding: 7px 9px;
+}
+
+.moderator-shell .deck-summary {
+  gap: 4px;
+  margin: 10px 0 12px;
+}
+
+.moderator-shell .deck-summary > div {
+  padding-bottom: 5px;
+}
+
+.moderator-shell .lobby-control-panel h2 {
+  margin: 3px 0 0;
+  font-size: 24px;
+}
+
+.moderator-shell .lobby-control-panel .hint {
+  margin-top: 10px;
+}
+
+.moderator-shell .reveal-readiness {
+  max-width: 900px;
+}
+
+.moderator-shell .reveal-readiness .joined-list {
+  margin-bottom: 12px;
+}
+
+.reveal-readiness .joined-seat small {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reveal-readiness .joined-seat small .confirmed {
+  color: var(--green);
+}
+
+.reveal-readiness .joined-seat small .pending {
+  color: var(--amber);
+}
+
+.moderator-shell .night-calls {
+  gap: 8px;
+}
+
+.moderator-shell .call-main {
+  min-height: 56px;
+  padding: 6px 8px 6px 12px;
+}
+
+.moderator-shell .action-monitor,
+.moderator-shell .final-target,
+.moderator-shell .action-summary {
+  padding: 12px;
+}
+
+.moderator-shell .roster-row {
+  min-height: var(--op-row);
+}
+
+.moderator-shell .roster-row > div span {
+  margin-top: 1px;
+}
+
+.moderator-shell .vote-open p {
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.moderator-shell .journal-panel {
+  margin-top: 14px;
+}
+
+.moderator-shell .journal-panel > summary {
+  padding: 12px 16px;
+}
+
+@media (max-width: 800px) {
+  .moderator-shell .moderator-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .room-basics,
+  .role-market {
+    grid-template-columns: 1fr;
+  }
+
+  .role-market > .market-group:nth-child(n) {
+    grid-row: auto;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .moderator-shell .topbar {
+    min-height: 54px;
+  }
+
+  .moderator-shell .moderator-layout,
+  .create-room-layout {
+    width: min(100% - 20px, 1240px);
+    padding-top: 14px;
+  }
+
+  .moderator-shell .phase-heading {
+    min-height: 0;
+    margin-bottom: 10px;
+    align-items: end;
+  }
+
+  .moderator-shell .phase-heading h1,
+  .create-heading h1 {
+    font-size: 32px;
+  }
+
+  .lobby-heading h1 {
+    display: grid;
+    gap: 2px;
+  }
+
+  .lobby-heading h1 > strong {
+    font-size: 34px;
+  }
+
+  .lobby-heading-status > strong,
+  .reveal-heading-status > strong {
+    font-size: 21px;
+  }
+
+  .moderator-shell .joined-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 520px) and (min-width: 801px) {
+  .moderator-shell .topbar {
+    min-height: 52px;
+    padding-block: 5px;
+  }
+
+  .moderator-shell .moderator-layout {
+    padding: 10px 0 24px;
+  }
+
+  .moderator-shell .phase-heading {
+    min-height: 48px;
+    margin-bottom: 8px;
+  }
+
+  .moderator-shell .phase-heading h1 {
+    font-size: 30px;
+  }
+
+  .moderator-shell .phase-heading > div:first-child > p:last-child {
+    display: none;
+  }
+
+  .moderator-shell section.panel {
+    padding: 12px;
+  }
+
+  .moderator-shell .section-title {
+    margin-bottom: 8px;
+  }
+
+  .moderator-shell .ritual-note {
+    margin-bottom: 8px;
   }
 }

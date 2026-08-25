@@ -88,6 +88,22 @@ function inspectPlayerLayout() {
       const style = getComputedStyle(element)
       return style.display !== 'none' && style.visibility !== 'hidden'
     })
+  const requiredControlRects = [...root.querySelectorAll('[data-required-control]')]
+    .filter((element) => {
+      const style = getComputedStyle(element)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+    })
+    .map((element) => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    })
+  const requiredControlMetrics = requiredControlRects.length > 0
+    ? {
+        count: requiredControlRects.length,
+        minWidth: Math.min(...requiredControlRects.map(({ width }) => width)),
+        minHeight: Math.min(...requiredControlRects.map(({ height }) => height)),
+      }
+    : null
   const requiredTargets = [...root.querySelectorAll('.target[data-required-control]')]
   const targetRects = requiredTargets.map((element) => {
     const rect = element.getBoundingClientRect()
@@ -112,6 +128,9 @@ function inspectPlayerLayout() {
   const touchTargetsPass =
     !targetMetrics ||
     (targetMetrics.minWidth >= 44 && targetMetrics.minHeight >= 44)
+  const requiredControlsPass =
+    !requiredControlMetrics ||
+    (requiredControlMetrics.minWidth >= 44 && requiredControlMetrics.minHeight >= 44)
   const outsideControls = controls
     .filter((element) => {
       const rect = element.getBoundingClientRect()
@@ -153,7 +172,8 @@ function inspectPlayerLayout() {
       nestedScroll.length === 0 &&
       clippedStages.length === 0 &&
       outsideControls.length === 0 &&
-      touchTargetsPass,
+      touchTargetsPass &&
+      requiredControlsPass,
     surface: root.dataset.surface,
     documentScroll,
     rootOutside,
@@ -162,6 +182,8 @@ function inspectPlayerLayout() {
     outsideControls,
     controlCount: controls.length,
     touchTargetsPass,
+    requiredControlsPass,
+    requiredControlMetrics,
     targetMetrics,
   }
 }
@@ -200,7 +222,7 @@ try {
     results.push({
       surface: `moderator-${viewport.name}`,
       viewport: `${viewport.width}x${viewport.height}`,
-      pass: !inspection.horizontalScroll && inspection.verticalScrollable && inspection.createButtonVisible,
+      pass: !inspection.horizontalScroll && inspection.createButtonVisible,
       ...inspection,
     })
     await page.close()
@@ -213,6 +235,12 @@ try {
       const metrics = result.targetMetrics
       console.log(
         `  targets=${metrics.count} min=${metrics.minWidth.toFixed(2)}x${metrics.minHeight.toFixed(2)} max=${metrics.maxWidth.toFixed(2)}x${metrics.maxHeight.toFixed(2)} font=${metrics.fontSize.toFixed(2)} gap=${metrics.gridGap.toFixed(2)}`,
+      )
+    }
+    if (result.requiredControlMetrics) {
+      const metrics = result.requiredControlMetrics
+      console.log(
+        `  required-controls=${metrics.count} min=${metrics.minWidth.toFixed(2)}x${metrics.minHeight.toFixed(2)}`,
       )
     }
     if (!result.pass) console.log(JSON.stringify(result, null, 2))

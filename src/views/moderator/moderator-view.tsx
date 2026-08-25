@@ -112,13 +112,18 @@ function ModeratorLobby({ state, dispatch }: ModeratorViewProps) {
     <main className="moderator-layout lobby-moderator">
       <div className="phase-heading lobby-heading">
         <div>
-          <p className="eyebrow">Lobby · Danh sách thành viên chính thức</p>
-          <h1>PHÒNG {state.roomCode.slice(0, 3)} {state.roomCode.slice(3)}</h1>
-          <p>
-            Người chơi chọn <strong>Vào phòng</strong> ở trang chủ và nhập mã này.
-          </p>
+          <p className="eyebrow">Lobby · Mã vào phòng</p>
+          <h1>
+            <span>Phòng</span>
+            <strong>{state.roomCode.slice(0, 3)} {state.roomCode.slice(3)}</strong>
+          </h1>
+          <p>Mời người chơi nhập mã này tại <strong>Vào phòng</strong>.</p>
         </div>
-        <span className="phase-pill">LOBBY</span>
+        <div className="lobby-heading-status">
+          <span className="phase-pill">LOBBY</span>
+          <strong>{state.players.length} / {state.config.seatCount}</strong>
+          <small>người đã vào</small>
+        </div>
       </div>
       <div className="moderator-grid">
         <section className="panel lobby-roster-panel">
@@ -181,13 +186,13 @@ function ModeratorRoleReveal({ state, dispatch }: ModeratorViewProps) {
           <h1>CHIA VAI</h1>
           <p>Chờ từng người xem và xác nhận lá vai trò riêng.</p>
         </div>
-        <span className="phase-pill">ROLE REVEAL</span>
+        <div className="reveal-heading-status">
+          <span className="phase-pill">ROLE REVEAL</span>
+          <strong>{confirmed.size} / {state.players.length}</strong>
+          <small>đã xác nhận</small>
+        </div>
       </div>
       <section className="panel reveal-readiness">
-        <div className="lobby-count">
-          <span>Đã nhớ vai trò</span>
-          <strong>{confirmed.size} / {state.players.length}</strong>
-        </div>
         <div className="joined-list compact">
           {state.players.map((player) => {
             const assignment = state.roleAssignments.find(
@@ -198,9 +203,14 @@ function ModeratorRoleReveal({ state, dispatch }: ModeratorViewProps) {
                 <span>{String(player.seat).padStart(2, '0')}</span>
                 <strong>{player.alias}</strong>
                 <small>
-                  {assignment
-                    ? classicRoleById[assignment.roleId].displayName
-                    : 'Chưa gán'} · {confirmed.has(player.id) ? 'Đã xác nhận' : 'Đang xem'}
+                  <span>
+                    {assignment
+                      ? classicRoleById[assignment.roleId].displayName
+                      : 'Chưa gán'}
+                  </span>
+                  <span className={confirmed.has(player.id) ? 'confirmed' : 'pending'}>
+                    {confirmed.has(player.id) ? 'Đã xác nhận' : 'Đang xem'}
+                  </span>
                 </small>
               </div>
             )
@@ -582,7 +592,7 @@ export function ModeratorView({ state, dispatch }: ModeratorViewProps) {
           <Roster state={state} dispatch={dispatch} />
         </aside>
       </div>
-      <Journal state={state} />
+      {import.meta.env.DEV && <Journal state={state} />}
     </main>
   )
 }

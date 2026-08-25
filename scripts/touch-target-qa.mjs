@@ -78,6 +78,17 @@ async function joinPlayer(code, name) {
   return page
 }
 
+async function inspectModeratorLayout(page, surface) {
+  const metrics = await page.evaluate(() => ({
+    viewport: `${innerWidth}x${innerHeight}`,
+    documentHeight: document.documentElement.scrollHeight,
+    horizontalScroll: document.documentElement.scrollWidth > innerWidth + 1,
+    verticalScroll: document.documentElement.scrollHeight > innerHeight + 1,
+  }))
+  invariant(!metrics.horizontalScroll, `Moderator ${surface} has horizontal scroll.`)
+  return { surface, ...metrics }
+}
+
 async function inspectTargets(page) {
   return page.evaluate(() => {
     const root = document.querySelector('[data-player-viewport]')
@@ -186,8 +197,10 @@ try {
   }
   await moderator.bringToFront()
   await moderator.waitForFunction(() => document.querySelector('.lobby-count strong')?.textContent.includes('16 / 16'))
+  const moderatorLayouts = [await inspectModeratorLayout(moderator, '16-player lobby')]
   await moderator.click('.lobby-control-panel .button.primary')
   await moderator.waitForSelector('.reveal-moderator')
+  moderatorLayouts.push(await inspectModeratorLayout(moderator, '16-player role reveal'))
 
   for (const url of urls) {
     const player = await newPage()
@@ -204,6 +217,7 @@ try {
   })
   await moderator.click('.reveal-readiness .button.primary')
   await moderator.waitForSelector('.night-panel')
+  moderatorLayouts.push(await inspectModeratorLayout(moderator, '16-player night'))
 
   state = await roomState(moderator, roomId)
   const urlByPlayer = new Map(
@@ -267,7 +281,7 @@ try {
   await voter.close()
 
   console.log('MS-0D 16-PLAYER PRODUCT TOUCH QA PASS')
-  console.log(JSON.stringify({ roomCode: code, night, dayVote }, null, 2))
+  console.log(JSON.stringify({ roomCode: code, moderatorLayouts, night, dayVote }, null, 2))
   await moderator.close()
 } finally {
   await browser.close()
