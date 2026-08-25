@@ -38,6 +38,12 @@ export interface PlayerActionSnapshot {
     | 'SEER_SELECT'
     | 'SEER_RESULT'
     | 'PROTECTOR_SELECT'
+    | 'WITCH_DECISION'
+  resurrectionCandidates?: Player[]
+  poisonCandidates?: Player[]
+  resurrectionAvailable?: boolean
+  poisonAvailable?: boolean
+  witchAttackedThisNight?: boolean
   inspectedTarget?: Player
   seerResult?: 'WOLF' | 'NON_WOLF'
 }
@@ -97,7 +103,9 @@ function projectNightAction(
   }
 
   const targetIds =
-    action.kind === 'SELECT_TARGET'
+    action.kind === 'WITCH_DECISION'
+      ? action.eligibleTargetIds
+      : action.kind === 'SELECT_TARGET'
       ? getEligibleRoleTargets(state, action.roleId, player.id)
       : action.eligibleTargetIds
   const hasSelected = Object.prototype.hasOwnProperty.call(
@@ -128,9 +136,20 @@ function projectNightAction(
           ? action.seer
             ? 'SEER_RESULT'
             : 'SEER_SELECT'
-          : action.roleId === 'protector'
+        : action.roleId === 'protector'
             ? 'PROTECTOR_SELECT'
-            : undefined,
+            : action.roleId === 'witch'
+              ? 'WITCH_DECISION'
+              : undefined,
+    resurrectionCandidates: action.witch?.resurrectionCandidateIds.map(
+      (targetId) => playerById(state, targetId),
+    ),
+    poisonCandidates: action.witch?.poisonCandidateIds.map((targetId) =>
+      playerById(state, targetId),
+    ),
+    resurrectionAvailable: action.witch?.resurrectionAvailable,
+    poisonAvailable: action.witch?.poisonAvailable,
+    witchAttackedThisNight: action.witch?.attackedThisNight,
     inspectedTarget: action.seer
       ? playerById(state, action.seer.targetId)
       : undefined,
@@ -147,6 +166,22 @@ export function projectRoomSnapshot(
   }
 
   const self = playerById(state, audience.playerId)
+  const hiddenCurrentNightDeathIds =
+    state.phase === 'NIGHT' &&
+    state.witchCheckpoint?.nightNumber === state.dayNumber
+      ? new Set(
+          state.witchCheckpoint.finalDeaths.map((death) => death.playerId),
+        )
+      : new Set<PlayerId>()
+  const projectedPlayers = state.players.map((player) =>
+    hiddenCurrentNightDeathIds.has(player.id)
+      ? { ...player, alive: true }
+      : structuredClone(player),
+  )
+  const projectedSelf = projectedPlayers.find((player) => player.id === self.id)
+  if (!projectedSelf) {
+    throw new Error('Ghế người chơi không tồn tại trong projection.')
+  }
   const roleAssignment = state.roleAssignments.find(
     (assignment) => assignment.playerId === self.id,
   )
@@ -167,8 +202,8 @@ export function projectRoomSnapshot(
     seatCount: state.config.seatCount,
     phase: state.phase,
     dayNumber: state.dayNumber,
-    self: structuredClone(self),
-    players: structuredClone(state.players),
+    self: projectedSelf,
+    players: projectedPlayers,
     roleIdentity:
       catalogRole
         ? {

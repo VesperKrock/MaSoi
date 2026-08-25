@@ -272,12 +272,32 @@ try {
   await seer.close()
 
   await moderator.bringToFront()
-  await moderator.waitForSelector('.next-phase')
-  await moderator.click('.next-phase')
-  await moderator.waitForSelector('.day-panel')
-  await moderator.click('.day-panel > .button.primary')
+  await moderator.waitForFunction(() =>
+    [...document.querySelectorAll('.night-resolution-summary .button')]
+      .some((button) => button.textContent?.includes('Phân giải') && !button.disabled),
+  )
+  await moderator.evaluate(() => {
+    const button = [...document.querySelectorAll('.night-resolution-summary .button')]
+      .find((candidate) => candidate.textContent?.includes('Phân giải'))
+    if (button instanceof HTMLButtonElement) button.click()
+  })
+  await moderator.waitForFunction(() =>
+    [...document.querySelectorAll('.night-resolution-summary .button')]
+      .some((button) => button.textContent?.includes('Chốt tử vong') && !button.disabled),
+  )
+  await moderator.evaluate(() => {
+    const button = [...document.querySelectorAll('.night-resolution-summary .button')]
+      .find((candidate) => candidate.textContent?.includes('Chốt tử vong'))
+    if (button instanceof HTMLButtonElement) button.click()
+  })
+  await moderator.waitForFunction(() =>
+    document.querySelector('.night-panel')?.textContent?.includes('Server đã áp dụng'),
+  )
   const voter = await newPage()
-  await voter.goto(urls[0], { waitUntil: 'domcontentloaded' })
+  await voter.goto(
+    `${origin}/?dev=zero-scroll&surface=vote&transport=local`,
+    { waitUntil: 'domcontentloaded' },
+  )
   await voter.waitForSelector('[data-surface="day_vote"]')
   const dayVote = await measureAtAllViewports(voter, 'day_vote')
   await voter.close()

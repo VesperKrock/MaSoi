@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { playerLabel } from '../../components/player-label'
 import type { RoomCommand } from '../../domain/game/types'
-import type { PlayerRoomSnapshot } from '../../state/room-projection'
+import type {
+  PlayerActionSnapshot,
+  PlayerRoomSnapshot,
+} from '../../state/room-projection'
 
 interface PlayerViewProps {
   snapshot: PlayerRoomSnapshot
@@ -144,9 +147,129 @@ function TargetButton({
   )
 }
 
+function WitchDecisionView({
+  action,
+  snapshot,
+  dispatch,
+}: PlayerViewProps & { action: PlayerActionSnapshot }) {
+  const [mode, setMode] = useState<'RESURRECTION' | 'POISON'>(
+    action.resurrectionAvailable ? 'RESURRECTION' : 'POISON',
+  )
+  const [resurrectionTargetId, setResurrectionTargetId] = useState<
+    string | null
+  >(null)
+  const [poisonTargetId, setPoisonTargetId] = useState<string | null>(null)
+  const candidates =
+    mode === 'RESURRECTION'
+      ? action.resurrectionCandidates ?? []
+      : action.poisonCandidates ?? []
+  const selectedTargetId =
+    mode === 'RESURRECTION' ? resurrectionTargetId : poisonTargetId
+  const selectTarget = (targetId: string | null) => {
+    if (mode === 'RESURRECTION') setResurrectionTargetId(targetId)
+    else setPoisonTargetId(targetId)
+  }
+  const resurrectionName = action.resurrectionCandidates?.find(
+    (player) => player.id === resurrectionTargetId,
+  )?.alias
+  const poisonName = action.poisonCandidates?.find(
+    (player) => player.id === poisonTargetId,
+  )?.alias
+
+  return (
+    <section className="player-action compact-action witch-action">
+      <header>
+        <p className="eyebrow">CHECKPOINT CUỐI ĐÊM</p>
+        <h1>Quyết định của Phù Thủy</h1>
+        <p>Chỉ tên nạn nhân hiện tại được hiển thị. Không có thông tin nguồn.</p>
+      </header>
+      {(action.resurrectionAvailable || action.poisonAvailable) && (
+        <div className="witch-tabs" role="tablist" aria-label="Chọn loại bình">
+          {action.resurrectionAvailable && (
+            <button
+              className={mode === 'RESURRECTION' ? 'selected' : ''}
+              onClick={() => setMode('RESURRECTION')}
+              role="tab"
+              aria-selected={mode === 'RESURRECTION'}
+              data-required-control
+            >
+              Bình cứu
+            </button>
+          )}
+          {action.poisonAvailable && (
+            <button
+              className={mode === 'POISON' ? 'selected' : ''}
+              onClick={() => setMode('POISON')}
+              role="tab"
+              aria-selected={mode === 'POISON'}
+              data-required-control
+            >
+              Bình độc
+            </button>
+          )}
+        </div>
+      )}
+      {action.witchAttackedThisNight && (
+        <p className="witch-status">Bạn không thể dùng bình cứu trong Đêm này.</p>
+      )}
+      {candidates.length > 0 ? (
+        <div className="target-list">
+          {candidates.map((candidate) => (
+            <TargetButton
+              key={candidate.id}
+              seat={candidate.seat}
+              name={candidate.alias}
+              selected={selectedTargetId === candidate.id}
+              onClick={() => selectTarget(candidate.id)}
+            />
+          ))}
+          <TargetButton
+            seat="—"
+            name="Không dùng"
+            selected={selectedTargetId === null}
+            onClick={() => selectTarget(null)}
+          />
+        </div>
+      ) : (
+        <div className="witch-no-action">
+          Không có lựa chọn hợp lệ cho bình này trong Đêm hiện tại.
+        </div>
+      )}
+      <p className="witch-choice-summary">
+        Cứu: <strong>{resurrectionName ?? 'Không dùng'}</strong> · Độc:{' '}
+        <strong>{poisonName ?? 'Không dùng'}</strong>
+      </p>
+      <button
+        className="button primary full action-confirm"
+        onClick={() =>
+          dispatch({
+            type: 'SUBMIT_WITCH_DECISION',
+            playerId: snapshot.self.id,
+            resurrectionTargetId,
+            poisonTargetId,
+          })
+        }
+        data-required-control
+      >
+        Xác nhận quyết định · Úp máy
+      </button>
+    </section>
+  )
+}
+
 function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
   const action = snapshot.nightAction
   if (!action) return null
+  if (action.mode === 'WITCH_DECISION') {
+    return (
+      <WitchDecisionView
+        key={action.id}
+        action={action}
+        snapshot={snapshot}
+        dispatch={dispatch}
+      />
+    )
+  }
   const choose = (targetId: string | null) => {
     if (action.kind === 'WOLF_VOTE') {
       void dispatch({

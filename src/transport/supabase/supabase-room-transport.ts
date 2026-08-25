@@ -17,6 +17,7 @@ import type {
   NightAction,
   NightCall,
   PersistedNightResolution,
+  PersistedWitchCheckpoint,
   NightState,
   Player,
   RoleAssignment,
@@ -128,6 +129,22 @@ const serverMessages: Record<string, string> = {
     'Hãy hoàn tất lượt gọi Ma Sói và Bảo Vệ đã cấu hình trước khi phân giải.',
 }
 
+Object.assign(serverMessages, {
+  WITCH_CHECKPOINT_NOT_READY:
+    'Hãy hoàn tất các lượt gọi đầu Đêm và phân giải hiệu ứng trước khi mở/chốt Phù Thủy.',
+  WITCH_CHECKPOINT_ALREADY_OPEN:
+    'Checkpoint Phù Thủy đã mở; không thể mở lại role đầu Đêm.',
+  WITCH_DECISION_REQUIRED: 'Phù Thủy còn sống chưa xác nhận quyết định.',
+  WITCH_RESURRECTION_UNAVAILABLE: 'Bình cứu không còn khả dụng.',
+  WITCH_ATTACKED_CANNOT_RESURRECT:
+    'Phù Thủy bị tấn công trong Đêm này nên không thể dùng bình cứu.',
+  WITCH_RESURRECTION_TARGET_INVALID:
+    'Bình cứu chỉ áp dụng cho nạn nhân tạm thời của chính Đêm này.',
+  WITCH_POISON_UNAVAILABLE: 'Bình độc không còn khả dụng.',
+  WITCH_POISON_FORBIDDEN_NIGHT_ONE: 'Không được dùng bình độc trong Đêm 1.',
+  WITCH_POISON_SELF_TARGET: 'Phù Thủy không thể dùng bình độc lên chính mình.',
+})
+
 const machineCodes = new Set(Object.keys(serverMessages))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -231,6 +248,31 @@ function readNightAction(value: unknown): NightAction {
         acknowledged: value.seer.acknowledged === true,
       }
     : undefined
+  const witch = isRecord(value.witch)
+    ? {
+        resurrectionCandidateIds: readStringArray(
+          value.witch.resurrectionCandidateIds ?? [],
+        ),
+        poisonCandidateIds: readStringArray(
+          value.witch.poisonCandidateIds ?? [],
+        ),
+        resurrectionAvailable: value.witch.resurrectionAvailable === true,
+        poisonAvailable: value.witch.poisonAvailable === true,
+        attackedThisNight: value.witch.attackedThisNight === true,
+        decision: isRecord(value.witch.decision)
+          ? {
+              resurrectionTargetId:
+                typeof value.witch.decision.resurrectionTargetId === 'string'
+                  ? value.witch.decision.resurrectionTargetId
+                  : null,
+              poisonTargetId:
+                typeof value.witch.decision.poisonTargetId === 'string'
+                  ? value.witch.decision.poisonTargetId
+                  : null,
+            }
+          : undefined,
+      }
+    : undefined
   const result = isRecord(value.result)
     ? {
         targetId: typeof value.result.targetId === 'string' ? value.result.targetId : null,
@@ -241,7 +283,12 @@ function readNightAction(value: unknown): NightAction {
   return {
     id: value.id,
     roleId,
-    kind: value.kind === 'WOLF_VOTE' ? 'WOLF_VOTE' : 'SELECT_TARGET',
+    kind:
+      value.kind === 'WOLF_VOTE'
+        ? 'WOLF_VOTE'
+        : value.kind === 'WITCH_DECISION'
+          ? 'WITCH_DECISION'
+          : 'SELECT_TARGET',
     status:
       value.status === 'OPEN'
         ? 'OPEN'
@@ -254,6 +301,7 @@ function readNightAction(value: unknown): NightAction {
     confirmedActorIds: readStringArray(value.confirmedActorIds ?? []),
     wolf,
     seer,
+    witch,
     result,
     openedAt: parseTimestamp(value.openedAt),
     completedAt:
@@ -394,6 +442,84 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
   }
 }
 
+function readWitchCheckpoint(value: unknown): PersistedWitchCheckpoint | null {
+  if (value === null || value === undefined) return null
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !Array.isArray(value.rescuedPlayerIds) ||
+    !Array.isArray(value.finalDeaths)
+  ) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const decision = isRecord(value.decision)
+    ? {
+        resurrectionTargetId:
+          typeof value.decision.resurrectionTargetId === 'string'
+            ? value.decision.resurrectionTargetId
+            : null,
+        poisonTargetId:
+          typeof value.decision.poisonTargetId === 'string'
+            ? value.decision.poisonTargetId
+            : null,
+      }
+    : { resurrectionTargetId: null, poisonTargetId: null }
+  const poisonEffectValue = value.poisonEffect
+  let poisonEffect: PersistedWitchCheckpoint['poisonEffect'] = null
+  if (isRecord(poisonEffectValue)) {
+    if (
+      typeof poisonEffectValue.id !== 'string' ||
+      poisonEffectValue.sourceType !== 'WITCH_POISON' ||
+      poisonEffectValue.sourceRoleId !== 'witch' ||
+      poisonEffectValue.category !== 'NON_VILLAIN_LETHAL_EFFECT' ||
+      typeof poisonEffectValue.targetPlayerId !== 'string' ||
+      poisonEffectValue.lethal !== true ||
+      poisonEffectValue.protectorBlockable !== false ||
+      poisonEffectValue.outcome !== 'UNBLOCKED'
+    ) {
+      throw new Error('BACKEND_UNAVAILABLE')
+    }
+    poisonEffect = {
+        id: String(poisonEffectValue.id),
+        sourceType: 'WITCH_POISON',
+        sourceRoleId: 'witch' as const,
+        category: 'NON_VILLAIN_LETHAL_EFFECT' as const,
+        targetPlayerId: String(poisonEffectValue.targetPlayerId),
+        lethal: true,
+        protectorBlockable: false,
+        outcome: 'UNBLOCKED' as const,
+      }
+  }
+  const resourcesValue = value.resourcesAfter
+  const resourcesAfter = isRecord(resourcesValue)
+    ? {
+        witchPlayerId: String(resourcesValue.witchPlayerId),
+        resurrectionAvailable:
+          resourcesValue.resurrectionAvailable === true,
+        poisonAvailable: resourcesValue.poisonAvailable === true,
+      }
+    : null
+
+  return {
+    id: value.id,
+    nightNumber: Number(value.nightNumber),
+    finalizedAt: parseTimestamp(value.finalizedAt),
+    decision,
+    rescuedPlayerIds: readStringArray(value.rescuedPlayerIds),
+    poisonEffect,
+    finalDeaths: value.finalDeaths.map((death) => {
+      if (!isRecord(death) || typeof death.playerId !== 'string') {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      return {
+        playerId: death.playerId,
+        sourceEffectIds: readStringArray(death.sourceEffectIds ?? []),
+      }
+    }),
+    resourcesAfter,
+  }
+}
+
 function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'] {
   if (value === null || value === undefined) return undefined
   if (!isRecord(value) || typeof value.id !== 'string') {
@@ -404,7 +530,12 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
     : []
   return {
     id: value.id,
-    kind: value.kind === 'WOLF_VOTE' ? 'WOLF_VOTE' : 'SELECT_TARGET',
+    kind:
+      value.kind === 'WOLF_VOTE'
+        ? 'WOLF_VOTE'
+        : value.kind === 'WITCH_DECISION'
+          ? 'WITCH_DECISION'
+          : 'SELECT_TARGET',
     roleId: readRoleId(value.roleId),
     roleName: String(value.roleName ?? ''),
     instructions: String(value.instructions ?? ''),
@@ -419,7 +550,8 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
       value.mode === 'WOLF_REVOTE' ||
       value.mode === 'SEER_SELECT' ||
       value.mode === 'SEER_RESULT' ||
-      value.mode === 'PROTECTOR_SELECT'
+      value.mode === 'PROTECTOR_SELECT' ||
+      value.mode === 'WITCH_DECISION'
         ? value.mode
         : 'WOLF_BALLOT',
     inspectedTarget: isRecord(value.inspectedTarget)
@@ -431,6 +563,15 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
         : value.seerResult === 'NON_WOLF'
           ? 'NON_WOLF'
           : undefined,
+    resurrectionCandidates: Array.isArray(value.resurrectionCandidates)
+      ? value.resurrectionCandidates.map(readRemotePlayer)
+      : undefined,
+    poisonCandidates: Array.isArray(value.poisonCandidates)
+      ? value.poisonCandidates.map(readRemotePlayer)
+      : undefined,
+    resurrectionAvailable: value.resurrectionAvailable === true,
+    poisonAvailable: value.poisonAvailable === true,
+    witchAttackedThisNight: value.witchAttackedThisNight === true,
   }
 }
 
@@ -513,6 +654,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
     assignments,
   }
   const roleIds = expandRoleDeck(roleComposition)
+  const witchCheckpoint = readWitchCheckpoint(value.witchCheckpoint)
   const state: RoomState = {
     schemaVersion: 2,
     roomId: room.id,
@@ -554,6 +696,8 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
             }
         : null,
     nightResolution: readNightResolution(value.nightResolution),
+    witchResources: witchCheckpoint?.resourcesAfter ?? null,
+    witchCheckpoint,
     dayVote: null,
     journal: [
       ...lifecycleJournal(payload),
@@ -807,7 +951,10 @@ export class SupabaseRoomTransport implements RoomTransport {
       } else if (command.type === 'START_NIGHT') {
         functionName = 'ms1a_start_room'
       } else if (command.type === 'CALL_NIGHT_ROLE') {
-        functionName = 'ms1b1_open_night_role_call'
+        functionName =
+          command.roleId === 'witch'
+            ? 'ms1c_open_witch_call'
+            : 'ms1b1_open_night_role_call'
       } else if (command.type === 'CAST_WOLF_VOTE') {
         functionName = 'ms1b1_submit_wolf_ballot'
       } else if (command.type === 'CONFIRM_NIGHT_ACTION') {
@@ -824,12 +971,23 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName = 'ms1b1_submit_protector_target'
       } else if (command.type === 'RESOLVE_NIGHT_EFFECTS') {
         functionName = 'ms1b2_resolve_night_effects'
+      } else if (command.type === 'SUBMIT_WITCH_DECISION') {
+        functionName = 'ms1c_submit_witch_decision'
+      } else if (command.type === 'FINALIZE_NIGHT_CHECKPOINT') {
+        functionName = 'ms1c_finalize_night_checkpoint'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }
       const args: Record<string, unknown> = { p_room_id: roomId }
-      if (command.type === 'CALL_NIGHT_ROLE' || command.type === 'COMPLETE_NIGHT_CALL') {
+      if (
+        (command.type === 'CALL_NIGHT_ROLE' && command.roleId !== 'witch') ||
+        command.type === 'COMPLETE_NIGHT_CALL'
+      ) {
         args.p_role_id = command.roleId
+      }
+      if (command.type === 'SUBMIT_WITCH_DECISION') {
+        args.p_resurrection_target_id = command.resurrectionTargetId
+        args.p_poison_target_id = command.poisonTargetId
       }
       if (
         command.type === 'CAST_WOLF_VOTE' ||

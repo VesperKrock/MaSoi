@@ -121,6 +121,34 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
+  if (surface === 'witch-action' || surface === 'witch-poison-action') {
+    const resurrectionAvailable = surface === 'witch-action'
+    return {
+      ...baseSnapshot,
+      roleIdentity: {
+        roleId: 'witch',
+        displayName: 'Phù Thủy',
+        factionMeaning: 'Dân Làng',
+        rulesText: 'Một bình cứu và một bình độc cho cả ván.',
+        cardAsset: cardAssetUrl('Phù Thủy.jpg'),
+      },
+      nightAction: {
+        id: `qa-${surface}`,
+        kind: 'WITCH_DECISION',
+        roleId: 'witch',
+        roleName: 'Phù Thủy',
+        instructions: 'Chọn quyết định cuối Đêm.',
+        mode: 'WITCH_DECISION',
+        candidates: [],
+        resurrectionCandidates: resurrectionAvailable ? players.slice(1) : [],
+        poisonCandidates: players.slice(1),
+        resurrectionAvailable,
+        poisonAvailable: true,
+        witchAttackedThisNight: !resurrectionAvailable,
+        hasSelected: false,
+      },
+    }
+  }
   if (surface === 'vote') {
     return {
       ...baseSnapshot,

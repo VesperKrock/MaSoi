@@ -9,6 +9,7 @@ import type {
 } from '../../domain/game/types'
 import { getNightResolutionReadiness } from '../../domain/gameplay/night-resolution'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
+import { getPreWitchNightRoleIds } from '../../domain/roles/role-definitions'
 
 interface ModeratorViewProps {
   state: RoomState
@@ -405,10 +406,79 @@ function NightResolutionPanel({ state, dispatch }: ModeratorViewProps) {
   )
 }
 
+function WitchFinalizationPanel({ state, dispatch }: ModeratorViewProps) {
+  const night = state.night
+  if (!night) return null
+  const resolutionReady =
+    state.nightResolution?.nightNumber === state.dayNumber
+  const checkpoint =
+    state.witchCheckpoint?.nightNumber === state.dayNumber
+      ? state.witchCheckpoint
+      : null
+  const witchConfigured = state.config.nightRoleIds.includes('witch')
+  const witchComplete =
+    night.calls.find((call) => call.roleId === 'witch')?.status === 'COMPLETED'
+  const canFinalize =
+    resolutionReady && (!witchConfigured || witchComplete)
+
+  if (checkpoint) {
+    return (
+      <div className="night-resolution-summary resolved-resolution">
+        <div>
+          <p className="eyebrow">Checkpoint cuối Đêm</p>
+          {checkpoint.rescuedPlayerIds.map((playerId) => (
+            <span key={`rescued-${playerId}`}>
+              Đã cứu: <strong>{playerName(state, playerId)}</strong>
+            </span>
+          ))}
+          {checkpoint.finalDeaths.length === 0 ? (
+            <strong>Không có tử vong cuối Đêm.</strong>
+          ) : (
+            checkpoint.finalDeaths.map((death) => (
+              <strong key={death.playerId}>
+                Tử vong đã chốt: {playerName(state, death.playerId)}
+              </strong>
+            ))
+          )}
+        </div>
+        <small>Server đã áp dụng · vẫn giữ phase Đêm.</small>
+      </div>
+    )
+  }
+
+  return (
+    <div className="night-resolution-summary pending-resolution">
+      <div>
+        <p className="eyebrow">Checkpoint cuối Đêm</p>
+        <strong>
+          {!resolutionReady
+            ? 'Chờ phân giải hiệu ứng đầu Đêm.'
+            : witchConfigured && !witchComplete
+              ? 'Chờ hoàn tất nghi thức Phù Thủy.'
+              : 'Sẵn sàng chốt tử vong hiện tại.'}
+        </strong>
+      </div>
+      <button
+        className="button primary"
+        disabled={!canFinalize}
+        onClick={() => dispatch({ type: 'FINALIZE_NIGHT_CHECKPOINT' })}
+      >
+        Chốt tử vong Đêm
+      </button>
+    </div>
+  )
+}
+
 function NightPanel({ state, dispatch }: ModeratorViewProps) {
   const night = state.night
   if (!night) return null
-  const allComplete = night.calls.every((call) => call.status === 'COMPLETED')
+  const preWitchComplete = getPreWitchNightRoleIds(
+    state.config.nightRoleIds,
+  ).every(
+    (roleId) =>
+      night.calls.find((call) => call.roleId === roleId)?.status ===
+      'COMPLETED',
+  )
 
   return (
     <section className="panel night-panel">
@@ -446,7 +516,10 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   <button
                     className="button call-button"
                     disabled={
-                      night.activeRoleId !== null
+                      night.activeRoleId !== null ||
+                      (call.roleId === 'witch' &&
+                        (!preWitchComplete ||
+                          state.nightResolution?.nightNumber !== state.dayNumber))
                     }
                     onClick={() =>
                       dispatch({ type: 'CALL_NIGHT_ROLE', roleId: call.roleId })
@@ -488,20 +561,18 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   <p>Đang chờ hành động riêng trên điện thoại người chơi.</p>
                 </div>
               )}
+              {isActive && action?.kind === 'WITCH_DECISION' && (
+                <div className="action-monitor silent-call">
+                  <p>Đang chờ quyết định kết hợp trên điện thoại Phù Thủy.</p>
+                </div>
+              )}
               {action && <ActionResult state={state} action={action} />}
             </article>
           )
         })}
       </div>
       <NightResolutionPanel state={state} dispatch={dispatch} />
-      {allComplete && (
-        <button
-          className="button primary full next-phase"
-          onClick={() => dispatch({ type: 'START_DAY' })}
-        >
-          Chuyển sang Ban ngày
-        </button>
-      )}
+      <WitchFinalizationPanel state={state} dispatch={dispatch} />
     </section>
   )
 }

@@ -43,6 +43,15 @@ export const roomTransportErrorCodes = {
   revoteNotReady: 'REVOTE_NOT_READY',
   revoteExpired: 'REVOTE_EXPIRED',
   nightResolutionNotReady: 'NIGHT_RESOLUTION_NOT_READY',
+  witchCheckpointNotReady: 'WITCH_CHECKPOINT_NOT_READY',
+  witchCheckpointAlreadyOpen: 'WITCH_CHECKPOINT_ALREADY_OPEN',
+  witchDecisionRequired: 'WITCH_DECISION_REQUIRED',
+  witchResurrectionUnavailable: 'WITCH_RESURRECTION_UNAVAILABLE',
+  witchAttackedCannotResurrect: 'WITCH_ATTACKED_CANNOT_RESURRECT',
+  witchResurrectionTargetInvalid: 'WITCH_RESURRECTION_TARGET_INVALID',
+  witchPoisonUnavailable: 'WITCH_POISON_UNAVAILABLE',
+  witchPoisonForbiddenNightOne: 'WITCH_POISON_FORBIDDEN_NIGHT_ONE',
+  witchPoisonSelfTarget: 'WITCH_POISON_SELF_TARGET',
 } as const
 
 export type RoomTransportErrorCode =

@@ -1,6 +1,10 @@
 import { createRequestId } from '../../lib/request-id'
 import { createJournalEvent } from '../journal/journal'
-import { getNightRoleIds, roleDefinitions } from '../roles/role-definitions'
+import {
+  getNightRoleIds,
+  getPreWitchNightRoleIds,
+  roleDefinitions,
+} from '../roles/role-definitions'
 import {
   getEligibleDayTargets,
   getEligibleRoleTargets,
@@ -15,6 +19,11 @@ import {
   getNightResolutionReadiness,
   resolveNightEffects,
 } from '../gameplay/night-resolution'
+import {
+  finalizeWitchCheckpoint,
+  getWitchCapabilities,
+  validateWitchDecision,
+} from '../gameplay/witch-checkpoint'
 import { resolveDayVote } from '../voting/day-vote'
 import { systemRandom, type RandomSource } from '../voting/random'
 import {
@@ -166,6 +175,8 @@ export function createProductRoom(
     },
     night: null,
     nightResolution: null,
+    witchResources: null,
+    witchCheckpoint: null,
     dayVote: null,
     journal: [],
   }
@@ -220,6 +231,8 @@ export function createDemoRoom(
     },
     night: null,
     nightResolution: null,
+    witchResources: null,
+    witchCheckpoint: null,
     dayVote: null,
     journal: [],
   }
@@ -431,6 +444,7 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
   state.phase = 'NIGHT'
   state.dayVote = null
   state.nightResolution = null
+  state.witchCheckpoint = null
   state.night = {
     number: state.dayNumber,
     calls: createNightCalls(state),
@@ -468,14 +482,94 @@ function callNightRole(
   if (!definition) {
     fail('Mechanics của role này chưa được triển khai trong MS-0B.')
   }
+  const witchCall = state.night.calls.find((entry) => entry.roleId === 'witch')
+  if (
+    definition.nightStage === 'PRE_WITCH' &&
+    witchCall &&
+    witchCall.status !== 'NOT_CALLED'
+  ) {
+    fail('Không thể mở role đầu Đêm sau khi checkpoint Phù Thủy đã mở.')
+  }
+  if (roleId === 'witch') {
+    const incompletePreWitch = getPreWitchNightRoleIds(
+      state.config.nightRoleIds,
+    ).filter(
+      (preWitchRoleId) =>
+        state.night?.calls.find((entry) => entry.roleId === preWitchRoleId)
+          ?.status !== 'COMPLETED',
+    )
+    if (incompletePreWitch.length > 0) {
+      fail('Phải hoàn tất tất cả lượt gọi trước Phù Thủy.')
+    }
+    if (state.nightResolution?.nightNumber !== state.dayNumber) {
+      fail('Phải phân giải hiệu ứng đầu Đêm trước khi gọi Phù Thủy.')
+    }
+  }
+
   const eligibleActorIds =
     roleId === 'werewolf'
       ? getEligibleWolfGroupActors(state)
       : getLivingHolders(state, roleId)
 
+  if (roleId === 'witch' && !state.witchResources) {
+    const witchPlayerId = state.roleAssignments.find(
+      (assignment) => assignment.roleId === 'witch',
+    )?.playerId
+    if (!witchPlayerId) fail('Không tìm thấy holder Phù Thủy đã được chia vai.')
+    state.witchResources = {
+      witchPlayerId,
+      resurrectionAvailable: true,
+      poisonAvailable: true,
+    }
+  }
+
   // A dead role deliberately produces no player action, but the call remains
   // active until the Moderator confirms it. No public state identifies why.
   if (eligibleActorIds.length === 0 || definition.actionType === 'NONE') {
+    return
+  }
+
+  if (roleId === 'witch') {
+    const witchPlayerId = eligibleActorIds[0]
+    const witchResources = state.witchResources
+    if (!witchResources) fail('Thiếu tài nguyên Phù Thủy của ván hiện tại.')
+    const capabilities = getWitchCapabilities({
+      nightNumber: state.dayNumber,
+      witchPlayerId,
+      witchAliveBeforeNight: true,
+      provisionalDeathCandidateIds:
+        state.nightResolution?.provisionalDeathCandidateIds ?? [],
+      players: state.players,
+      resources: witchResources,
+    })
+    const action: NightAction = {
+      id: environment.nextId(),
+      roleId,
+      kind: 'WITCH_DECISION',
+      status: 'OPEN',
+      eligibleActorIds,
+      eligibleTargetIds: [
+        ...new Set([
+          ...capabilities.resurrectionCandidateIds,
+          ...capabilities.poisonCandidateIds,
+        ]),
+      ],
+      selections: {},
+      confirmedActorIds: [],
+      witch: {
+        resurrectionCandidateIds: capabilities.resurrectionCandidateIds,
+        poisonCandidateIds: capabilities.poisonCandidateIds,
+        resurrectionAvailable: capabilities.canResurrect,
+        poisonAvailable: capabilities.canPoison,
+        attackedThisNight: capabilities.attackedThisNight,
+      },
+      openedAt: environment.now(),
+    }
+    state.night.actionsByRole.witch = action
+    appendEvent(state, environment, 'ROLE_ACTION_OPENED', {
+      actorRoleId: 'witch',
+      metadata: { actionId: action.id, eligibleActorCount: 1 },
+    })
     return
   }
 
@@ -830,6 +924,9 @@ function completeNightCall(
     fail('Role này không phải lượt gọi hiện tại.')
   }
   const action = state.night.actionsByRole[roleId]
+  if (roleId === 'witch' && action?.status === 'OPEN') {
+    fail('Phù Thủy còn sống phải xác nhận quyết định kết hợp trên thiết bị riêng.')
+  }
   if (action?.kind === 'WOLF_VOTE' && action.status === 'OPEN') {
     fail('Hãy phân giải phiếu Ma Sói trước khi đóng lượt gọi.')
   }
@@ -842,6 +939,65 @@ function completeNightCall(
     })
   }
   finishCall(state, roleId, environment)
+}
+
+function submitWitchDecision(
+  state: RoomState,
+  playerId: PlayerId,
+  resurrectionTargetId: PlayerId | null,
+  poisonTargetId: PlayerId | null,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (
+    action.roleId !== 'witch' ||
+    action.kind !== 'WITCH_DECISION' ||
+    !action.witch
+  ) {
+    fail('Đây không phải checkpoint hành động của Phù Thủy.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Phù Thủy còn sống mới được gửi quyết định này.')
+  }
+  if (action.confirmedActorIds.includes(playerId)) {
+    fail('Quyết định Phù Thủy đã được xác nhận.')
+  }
+  if (!state.nightResolution || !state.witchResources) {
+    fail('Thiếu dữ liệu phân giải đầu Đêm hoặc tài nguyên Phù Thủy.')
+  }
+
+  const capabilityInput = {
+    nightNumber: state.dayNumber,
+    witchPlayerId: playerId,
+    witchAliveBeforeNight: true,
+    provisionalDeathCandidateIds:
+      state.nightResolution.provisionalDeathCandidateIds,
+    players: state.players,
+    resources: state.witchResources,
+  }
+  validateWitchDecision(
+    {
+      ...capabilityInput,
+      preWitchEffects: state.nightResolution.effects,
+      poisonEffectId: poisonTargetId ? 'validation-only' : undefined,
+    },
+    { resurrectionTargetId, poisonTargetId },
+    getWitchCapabilities(capabilityInput),
+  )
+
+  action.witch.decision = { resurrectionTargetId, poisonTargetId }
+  action.confirmedActorIds.push(playerId)
+  action.status = 'COMPLETED'
+  action.completedAt = environment.now()
+  appendEvent(state, environment, 'WITCH_DECISION_SUBMITTED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'witch',
+    metadata: {
+      usesResurrection: resurrectionTargetId !== null,
+      usesPoison: poisonTargetId !== null,
+    },
+  })
+  finishCall(state, 'witch', environment)
 }
 
 function resolveNightConsequences(
@@ -937,12 +1093,104 @@ function resolveNightConsequences(
   })
 }
 
+function finalizeNightCheckpoint(
+  state: RoomState,
+  environment: GameEnvironment,
+): void {
+  if (state.lifecycle !== 'IN_GAME' || state.phase !== 'NIGHT' || !state.night) {
+    fail('Chỉ được chốt tử vong trong Đêm của ván đang chơi.')
+  }
+  if (state.witchCheckpoint?.nightNumber === state.dayNumber) return
+  if (state.nightResolution?.nightNumber !== state.dayNumber) {
+    fail('Phải phân giải hiệu ứng đầu Đêm trước khi chốt tử vong.')
+  }
+
+  const witchConfigured = state.config.nightRoleIds.includes('witch')
+  const witchCall = state.night.calls.find((call) => call.roleId === 'witch')
+  if (witchConfigured && witchCall?.status !== 'COMPLETED') {
+    fail('Phải gọi và hoàn tất nghi thức Phù Thủy trước khi chốt Đêm.')
+  }
+  const witchPlayerId =
+    state.roleAssignments.find((assignment) => assignment.roleId === 'witch')
+      ?.playerId ?? null
+  const witchAliveBeforeNight =
+    witchPlayerId !== null &&
+    state.players.find((player) => player.id === witchPlayerId)?.alive === true
+  const decision = state.night.actionsByRole.witch?.witch?.decision ?? null
+  const result = finalizeWitchCheckpoint({
+    nightNumber: state.dayNumber,
+    witchPlayerId,
+    witchAliveBeforeNight,
+    provisionalDeathCandidateIds:
+      state.nightResolution.provisionalDeathCandidateIds,
+    preWitchEffects: state.nightResolution.effects,
+    players: state.players,
+    resources: witchConfigured ? state.witchResources ?? null : null,
+    decision,
+    poisonEffectId: decision?.poisonTargetId
+      ? environment.nextId()
+      : undefined,
+  })
+  state.witchResources = result.resourcesAfter
+  state.witchCheckpoint = {
+    id: environment.nextId(),
+    nightNumber: state.dayNumber,
+    finalizedAt: environment.now(),
+    ...result,
+  }
+
+  for (const playerId of result.rescuedPlayerIds) {
+    appendEvent(state, environment, 'WITCH_RESURRECTION_USED', {
+      actorRoleId: 'witch',
+      targetPlayerId: playerId,
+      resolution: 'CURRENT_NIGHT_RESCUE',
+    })
+  }
+  if (result.poisonEffect) {
+    appendEvent(state, environment, 'WITCH_POISON_USED', {
+      actorRoleId: 'witch',
+      targetPlayerId: result.poisonEffect.targetPlayerId,
+      resolution: result.poisonEffect.outcome,
+      metadata: {
+        effectId: result.poisonEffect.id,
+        category: result.poisonEffect.category,
+        protectorBlockable: false,
+      },
+    })
+  }
+  for (const death of result.finalDeaths) {
+    const player = state.players.find((entry) => entry.id === death.playerId)
+    if (player) player.alive = false
+    appendEvent(state, environment, 'NIGHT_DEATH_FINALIZED', {
+      targetPlayerId: death.playerId,
+      resolution: 'FINAL_NIGHT_DEATH',
+      metadata: { sourceEffectIds: death.sourceEffectIds },
+    })
+    appendEvent(state, environment, 'PLAYER_DEATH', {
+      targetPlayerId: death.playerId,
+      resolution: 'NIGHT_CHECKPOINT',
+      metadata: { sourceEffectIds: death.sourceEffectIds },
+    })
+  }
+  appendEvent(state, environment, 'WITCH_CHECKPOINT_COMPLETED', {
+    actorRoleId: witchConfigured ? 'witch' : undefined,
+    resolution: 'FINALIZED',
+    metadata: {
+      finalDeathCount: result.finalDeaths.length,
+      phaseTransitioned: false,
+    },
+  })
+}
+
 function startDay(state: RoomState, environment: GameEnvironment): void {
   if (state.phase !== 'NIGHT' || !state.night) {
     fail('Chỉ chuyển sang ngày từ phase đêm.')
   }
   if (state.night.calls.some((call) => call.status !== 'COMPLETED')) {
     fail('Phải gọi và hoàn tất tất cả role đêm đã cấu hình.')
+  }
+  if (state.witchCheckpoint?.nightNumber !== state.dayNumber) {
+    fail('Phải hoàn tất checkpoint tử vong Đêm trước khi chuyển phase.')
   }
   state.phase = 'DAY'
   appendEvent(state, environment, 'PHASE_CHANGED', {
@@ -1133,6 +1381,15 @@ export function applyRoomCommand(
         environment,
       )
       break
+    case 'SUBMIT_WITCH_DECISION':
+      submitWitchDecision(
+        state,
+        command.playerId,
+        command.resurrectionTargetId,
+        command.poisonTargetId,
+        environment,
+      )
+      break
     case 'RESOLVE_WOLF_VOTE':
       resolveWolfVote(state, command.atDeadline ?? false, environment)
       break
@@ -1141,6 +1398,9 @@ export function applyRoomCommand(
       break
     case 'RESOLVE_NIGHT_EFFECTS':
       resolveNightConsequences(state, environment)
+      break
+    case 'FINALIZE_NIGHT_CHECKPOINT':
+      finalizeNightCheckpoint(state, environment)
       break
     case 'START_DAY':
       startDay(state, environment)

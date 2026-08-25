@@ -1618,6 +1618,54 @@ body:has(.zero-scroll-surface) {
   min-height: 44px;
 }
 
+.witch-action {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+}
+
+.witch-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.witch-tabs button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 5px 8px;
+  border: 1px solid #5f4c27;
+  border-radius: 7px;
+  color: var(--muted);
+  background: #15130f;
+  font: inherit;
+}
+
+.witch-tabs button.selected {
+  border-color: var(--gold);
+  color: var(--cream);
+}
+
+.witch-status,
+.witch-choice-summary,
+.witch-no-action {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.witch-no-action {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid #453a25;
+  border-radius: 7px;
+}
+
+.witch-choice-summary strong {
+  color: var(--cream);
+}
+
 .night-resolution-summary {
   display: flex;
   align-items: center;

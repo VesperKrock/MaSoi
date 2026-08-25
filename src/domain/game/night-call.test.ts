@@ -32,7 +32,11 @@ function command(
   return applyRoomCommand(state, nextCommand, environment)
 }
 
-function completeWolfCall(state: RoomState, environment: GameEnvironment) {
+function completeWolfCall(
+  state: RoomState,
+  environment: GameEnvironment,
+  targetId: PlayerId | null = null,
+) {
   let next = command(state, environment, {
     type: 'CALL_NIGHT_ROLE',
     roleId: 'werewolf',
@@ -44,7 +48,7 @@ function completeWolfCall(state: RoomState, environment: GameEnvironment) {
     next = command(next, environment, {
       type: 'CAST_WOLF_VOTE',
       playerId: actorId,
-      targetId: null,
+      targetId,
     })
     next = command(next, environment, {
       type: 'CONFIRM_NIGHT_ACTION',
@@ -83,8 +87,16 @@ describe('dead-role nightly call secrecy', () => {
     if (!seerId) throw new Error('Expected demo Seer')
 
     state = command(state, environment, { type: 'START_NIGHT' })
-    state = completeWolfCall(state, environment)
+    const firstNightWolfTarget = state.players.find(
+      (player) => player.id !== seerId && player.id !== 'player-1' && player.id !== 'player-2',
+    )?.id
+    if (!firstNightWolfTarget) throw new Error('Expected a non-Seer Wolf target')
+    state = completeWolfCall(state, environment, firstNightWolfTarget)
     state = completeLivingSeerCall(state, environment, seerId)
+    state = command(state, environment, { type: 'RESOLVE_NIGHT_EFFECTS' })
+    state = command(state, environment, {
+      type: 'FINALIZE_NIGHT_CHECKPOINT',
+    })
     state = command(state, environment, { type: 'START_DAY' })
     state = command(state, environment, {
       type: 'MODERATOR_SET_ALIVE',
@@ -129,6 +141,10 @@ describe('dead-role nightly call secrecy', () => {
     expect(state.night?.calls.find((call) => call.roleId === 'seer')?.status).toBe(
       'COMPLETED',
     )
+    state = command(state, environment, { type: 'RESOLVE_NIGHT_EFFECTS' })
+    state = command(state, environment, {
+      type: 'FINALIZE_NIGHT_CHECKPOINT',
+    })
     state = command(state, environment, { type: 'START_DAY' })
     expect(state.phase).toBe('DAY')
     expect(

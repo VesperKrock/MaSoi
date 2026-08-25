@@ -21,7 +21,9 @@
     "qa:night-local": "node scripts/night-action-supabase-qa.mjs --local",
     "qa:night-remote": "node scripts/night-action-supabase-qa.mjs --remote",
     "qa:resolution-local": "node scripts/night-resolution-supabase-qa.mjs --local",
-    "qa:resolution-remote": "node scripts/night-resolution-supabase-qa.mjs --remote"
+    "qa:resolution-remote": "node scripts/night-resolution-supabase-qa.mjs --remote",
+    "qa:witch-local": "node scripts/witch-checkpoint-supabase-qa.mjs --local",
+    "qa:witch-remote": "node scripts/witch-checkpoint-supabase-qa.mjs --remote"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

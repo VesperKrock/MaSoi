@@ -51,6 +51,8 @@ const surfaces = [
   'seer-select',
   'seer-result',
   'protector-action',
+  'witch-action',
+  'witch-poison-action',
   'vote',
   'role-recheck',
 ]

@@ -1,8 +1,19 @@
 import type { RoleId } from '../roles/classic-catalog'
 import type { PersistedNightResolution } from '../gameplay/night-resolution'
+import type {
+  WitchDecision,
+  PersistedWitchCheckpoint,
+  WitchResources,
+} from '../gameplay/witch-checkpoint'
 
 export type { RoleId } from '../roles/classic-catalog'
 export type { PersistedNightResolution } from '../gameplay/night-resolution'
+export type {
+  WitchCheckpointResult,
+  WitchDecision,
+  PersistedWitchCheckpoint,
+  WitchResources,
+} from '../gameplay/witch-checkpoint'
 export type PlayerId = string
 export type Phase = 'SETUP' | 'NIGHT' | 'DAY' | 'ENDED'
 export type WolfPolicy = 'RANDOM_ON_TIE' | 'REVOTE_10S'
@@ -55,7 +66,7 @@ export interface FinalTargetResult {
 export interface NightAction {
   id: string
   roleId: RoleId
-  kind: 'WOLF_VOTE' | 'SELECT_TARGET'
+  kind: 'WOLF_VOTE' | 'SELECT_TARGET' | 'WITCH_DECISION'
   status: 'OPEN' | 'COMPLETED' | 'CLOSED_BY_MODERATOR'
   eligibleActorIds: PlayerId[]
   eligibleTargetIds: PlayerId[]
@@ -66,6 +77,14 @@ export interface NightAction {
     targetId: PlayerId
     result: 'WOLF' | 'NON_WOLF'
     acknowledged: boolean
+  }
+  witch?: {
+    resurrectionCandidateIds: PlayerId[]
+    poisonCandidateIds: PlayerId[]
+    resurrectionAvailable: boolean
+    poisonAvailable: boolean
+    attackedThisNight: boolean
+    decision?: WitchDecision
   }
   result?: FinalTargetResult
   openedAt: number
@@ -117,6 +136,11 @@ export type JournalEventType =
   | 'WOLF_ATTACK_BLOCKED'
   | 'NIGHT_DEATH_CANDIDATE_CREATED'
   | 'NIGHT_RESOLUTION_COMPLETED'
+  | 'WITCH_DECISION_SUBMITTED'
+  | 'WITCH_RESURRECTION_USED'
+  | 'WITCH_POISON_USED'
+  | 'WITCH_CHECKPOINT_COMPLETED'
+  | 'NIGHT_DEATH_FINALIZED'
   | 'DAY_VOTE_OPENED'
   | 'DAY_VOTE_CHANGED'
   | 'DAY_VOTE_CLOSED'
@@ -163,6 +187,8 @@ export interface RoomState {
   config: RoomConfig
   night: NightState | null
   nightResolution?: PersistedNightResolution | null
+  witchResources?: WitchResources | null
+  witchCheckpoint?: PersistedWitchCheckpoint | null
   dayVote: DayVoteState | null
   journal: JournalEvent[]
 }
@@ -184,6 +210,13 @@ export type RoomCommand =
   | { type: 'RESOLVE_WOLF_VOTE'; atDeadline?: boolean }
   | { type: 'COMPLETE_NIGHT_CALL'; roleId: RoleId }
   | { type: 'RESOLVE_NIGHT_EFFECTS' }
+  | {
+      type: 'SUBMIT_WITCH_DECISION'
+      playerId: PlayerId
+      resurrectionTargetId: PlayerId | null
+      poisonTargetId: PlayerId | null
+    }
+  | { type: 'FINALIZE_NIGHT_CHECKPOINT' }
   | { type: 'START_DAY' }
   | { type: 'OPEN_DAY_VOTE' }
   | { type: 'CAST_DAY_VOTE'; playerId: PlayerId; targetId: PlayerId | null }
