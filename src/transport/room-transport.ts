@@ -42,6 +42,7 @@ export const roomTransportErrorCodes = {
   wolfRoundNotReady: 'WOLF_ROUND_NOT_READY',
   revoteNotReady: 'REVOTE_NOT_READY',
   revoteExpired: 'REVOTE_EXPIRED',
+  nightResolutionNotReady: 'NIGHT_RESOLUTION_NOT_READY',
 } as const
 
 export type RoomTransportErrorCode =

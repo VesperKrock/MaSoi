@@ -19,7 +19,9 @@
     "qa:pages-deployed": "node scripts/pages-deployment-qa.mjs",
     "qa:ui-polish": "node scripts/ui-polish-visual-qa.mjs",
     "qa:night-local": "node scripts/night-action-supabase-qa.mjs --local",
-    "qa:night-remote": "node scripts/night-action-supabase-qa.mjs --remote"
+    "qa:night-remote": "node scripts/night-action-supabase-qa.mjs --remote",
+    "qa:resolution-local": "node scripts/night-resolution-supabase-qa.mjs --local",
+    "qa:resolution-remote": "node scripts/night-resolution-supabase-qa.mjs --remote"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

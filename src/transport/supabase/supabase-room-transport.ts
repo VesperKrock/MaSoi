@@ -1,5 +1,6 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { getNightRoleIds } from '../../domain/roles/role-definitions'
+import type { ResolvedNightEffect } from '../../domain/gameplay/night-resolution'
 import {
   cardAssetUrl,
   classicRoleById,
@@ -15,6 +16,7 @@ import type {
   JournalEvent,
   NightAction,
   NightCall,
+  PersistedNightResolution,
   NightState,
   Player,
   RoleAssignment,
@@ -122,6 +124,8 @@ const serverMessages: Record<string, string> = {
   WOLF_ROUND_NOT_READY: 'Chưa đủ phiếu Ma Sói đã xác nhận.',
   REVOTE_NOT_READY: 'Lượt chọn lại chưa thể phân giải.',
   REVOTE_EXPIRED: 'Lượt chọn lại đã hết thời gian.',
+  NIGHT_RESOLUTION_NOT_READY:
+    'Hãy hoàn tất lượt gọi Ma Sói và Bảo Vệ đã cấu hình trước khi phân giải.',
 }
 
 const machineCodes = new Set(Object.keys(serverMessages))
@@ -325,6 +329,71 @@ function readRemoteNight(value: unknown): { night: NightState; events: JournalEv
   }
 }
 
+function readNightResolution(value: unknown): PersistedNightResolution | null {
+  if (value === null || value === undefined) return null
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !Array.isArray(value.effects)
+  ) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+
+  const effects = value.effects.map((entry): ResolvedNightEffect => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== 'string' ||
+      typeof entry.sourceType !== 'string' ||
+      typeof entry.targetPlayerId !== 'string' ||
+      (entry.category !== 'HOSTILE_VILLAIN_ATTACK' &&
+        entry.category !== 'NON_VILLAIN_LETHAL_EFFECT') ||
+      (entry.outcome !== 'BLOCKED_BY_PROTECTOR' &&
+        entry.outcome !== 'UNBLOCKED')
+    ) {
+      throw new Error('BACKEND_UNAVAILABLE')
+    }
+    return {
+      id: entry.id,
+      sourceType: entry.sourceType,
+      sourceRoleId:
+        typeof entry.sourceRoleId === 'string'
+          ? readRoleId(entry.sourceRoleId)
+          : undefined,
+      category: entry.category,
+      targetPlayerId: entry.targetPlayerId,
+      lethal: entry.lethal === true,
+      protectorBlockable: entry.protectorBlockable === true,
+      outcome: entry.outcome,
+      blockSourceType:
+        entry.blockSourceType === 'PROTECTOR_SHIELD'
+          ? ('PROTECTOR_SHIELD' as const)
+          : undefined,
+      blockSourceRoleId:
+        entry.blockSourceRoleId === 'protector'
+          ? ('protector' as const)
+          : undefined,
+    }
+  })
+  const outcome =
+    value.outcome === 'NO_ATTACK' ||
+    value.outcome === 'BLOCKED' ||
+    value.outcome === 'UNBLOCKED'
+      ? value.outcome
+      : null
+  if (!outcome) throw new Error('BACKEND_UNAVAILABLE')
+
+  return {
+    id: value.id,
+    nightNumber: Number(value.nightNumber),
+    outcome,
+    effects,
+    provisionalDeathCandidateIds: readStringArray(
+      value.provisionalDeathCandidateIds ?? [],
+    ),
+    resolvedAt: parseTimestamp(value.resolvedAt),
+  }
+}
+
 function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'] {
   if (value === null || value === undefined) return undefined
   if (!isRecord(value) || typeof value.id !== 'string') {
@@ -484,6 +553,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
               actionsByRole: {},
             }
         : null,
+    nightResolution: readNightResolution(value.nightResolution),
     dayVote: null,
     journal: [
       ...lifecycleJournal(payload),
@@ -752,6 +822,8 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName = 'ms1b1_acknowledge_seer_result'
       } else if (command.type === 'SUBMIT_PROTECTOR_TARGET') {
         functionName = 'ms1b1_submit_protector_target'
+      } else if (command.type === 'RESOLVE_NIGHT_EFFECTS') {
+        functionName = 'ms1b2_resolve_night_effects'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }

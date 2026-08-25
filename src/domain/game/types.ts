@@ -1,6 +1,8 @@
 import type { RoleId } from '../roles/classic-catalog'
+import type { PersistedNightResolution } from '../gameplay/night-resolution'
 
 export type { RoleId } from '../roles/classic-catalog'
+export type { PersistedNightResolution } from '../gameplay/night-resolution'
 export type PlayerId = string
 export type Phase = 'SETUP' | 'NIGHT' | 'DAY' | 'ENDED'
 export type WolfPolicy = 'RANDOM_ON_TIE' | 'REVOTE_10S'
@@ -111,6 +113,10 @@ export type JournalEventType =
   | 'SEER_INSPECTION'
   | 'SEER_RESULT_ACKNOWLEDGED'
   | 'PROTECTOR_INTENT'
+  | 'WOLF_ATTACK_CREATED'
+  | 'WOLF_ATTACK_BLOCKED'
+  | 'NIGHT_DEATH_CANDIDATE_CREATED'
+  | 'NIGHT_RESOLUTION_COMPLETED'
   | 'DAY_VOTE_OPENED'
   | 'DAY_VOTE_CHANGED'
   | 'DAY_VOTE_CLOSED'
@@ -156,6 +162,7 @@ export interface RoomState {
   roleRevealConfirmedPlayerIds: PlayerId[]
   config: RoomConfig
   night: NightState | null
+  nightResolution?: PersistedNightResolution | null
   dayVote: DayVoteState | null
   journal: JournalEvent[]
 }
@@ -176,6 +183,7 @@ export type RoomCommand =
   | { type: 'SUBMIT_PROTECTOR_TARGET'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'RESOLVE_WOLF_VOTE'; atDeadline?: boolean }
   | { type: 'COMPLETE_NIGHT_CALL'; roleId: RoleId }
+  | { type: 'RESOLVE_NIGHT_EFFECTS' }
   | { type: 'START_DAY' }
   | { type: 'OPEN_DAY_VOTE' }
   | { type: 'CAST_DAY_VOTE'; playerId: PlayerId; targetId: PlayerId | null }

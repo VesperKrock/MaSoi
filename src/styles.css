@@ -1618,6 +1618,46 @@ body:has(.zero-scroll-surface) {
   min-height: 44px;
 }
 
+.night-resolution-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #5f4c27;
+  border-radius: 10px;
+  background: #15130f;
+}
+
+.night-resolution-summary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.night-resolution-summary .eyebrow {
+  margin: 0;
+}
+
+.night-resolution-summary span,
+.night-resolution-summary small {
+  color: var(--muted);
+}
+
+.night-resolution-summary .button {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.resolved-resolution {
+  align-items: end;
+}
+
+.resolved-resolution > div strong {
+  color: var(--cream);
+}
+
 .seer-result-player {
   grid-template-rows: auto minmax(0, 1fr) auto;
   text-align: center;
@@ -2110,6 +2150,15 @@ body:has(.zero-scroll-surface) {
 
   .moderator-shell .joined-list {
     grid-template-columns: 1fr;
+  }
+
+  .night-resolution-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .night-resolution-summary .button {
+    width: 100%;
   }
 }
 

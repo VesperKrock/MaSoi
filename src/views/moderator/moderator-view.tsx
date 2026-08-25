@@ -7,6 +7,7 @@ import type {
   RoomState,
   WolfPolicy,
 } from '../../domain/game/types'
+import { getNightResolutionReadiness } from '../../domain/gameplay/night-resolution'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
 
 interface ModeratorViewProps {
@@ -338,6 +339,72 @@ function ActionResult({ state, action }: { state: RoomState; action: NightAction
   return null
 }
 
+function NightResolutionPanel({ state, dispatch }: ModeratorViewProps) {
+  const night = state.night
+  if (!night) return null
+  const resolution =
+    state.nightResolution?.nightNumber === state.dayNumber
+      ? state.nightResolution
+      : null
+  const readiness = getNightResolutionReadiness({
+    configuredRoleIds: state.config.nightRoleIds,
+    calls: night.calls,
+  })
+
+  if (!resolution) {
+    const pendingNames = readiness.incompleteRoleIds.map(
+      (roleId) => classicRoleById[roleId].displayName,
+    )
+    return (
+      <div className="night-resolution-summary pending-resolution">
+        <div>
+          <p className="eyebrow">Tổng hợp hiệu ứng đêm</p>
+          <strong>
+            {readiness.ready
+              ? 'Đã đủ dữ liệu Ma Sói · Bảo Vệ'
+              : `Chờ hoàn tất: ${pendingNames.join(', ')}`}
+          </strong>
+        </div>
+        <button
+          className="button primary"
+          disabled={!readiness.ready}
+          onClick={() => dispatch({ type: 'RESOLVE_NIGHT_EFFECTS' })}
+        >
+          Phân giải đòn đêm
+        </button>
+      </div>
+    )
+  }
+
+  const wolfEffect = resolution.effects.find(
+    (effect) => effect.sourceType === 'WOLF_ATTACK',
+  )
+  return (
+    <div className="night-resolution-summary resolved-resolution">
+      <div>
+        <p className="eyebrow">Tổng hợp hiệu ứng đêm</p>
+        {resolution.outcome === 'NO_ATTACK' ? (
+          <strong>Không có đòn tấn công Ma Sói.</strong>
+        ) : (
+          <>
+            <span>
+              Ma Sói tấn công: <strong>{playerName(state, wolfEffect?.targetPlayerId)}</strong>
+            </span>
+            {resolution.outcome === 'BLOCKED' ? (
+              <strong>Bảo Vệ đã chặn đòn tấn công.</strong>
+            ) : (
+              <strong>
+                Ứng viên tử vong đêm nay: {playerName(state, wolfEffect?.targetPlayerId)}
+              </strong>
+            )}
+          </>
+        )}
+      </div>
+      <small>Trạng thái tạm thời · chưa áp dụng tử vong cuối.</small>
+    </div>
+  )
+}
+
 function NightPanel({ state, dispatch }: ModeratorViewProps) {
   const night = state.night
   if (!night) return null
@@ -426,6 +493,7 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
           )
         })}
       </div>
+      <NightResolutionPanel state={state} dispatch={dispatch} />
       {allComplete && (
         <button
           className="button primary full next-phase"

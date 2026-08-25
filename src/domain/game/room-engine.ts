@@ -10,6 +10,11 @@ import {
   getRoleIdForPlayer,
 } from '../actions/target-rules'
 import { detectForSeer } from '../gameplay/night-rules'
+import {
+  createWolfAttackEffect,
+  getNightResolutionReadiness,
+  resolveNightEffects,
+} from '../gameplay/night-resolution'
 import { resolveDayVote } from '../voting/day-vote'
 import { systemRandom, type RandomSource } from '../voting/random'
 import {
@@ -160,6 +165,7 @@ export function createProductRoom(
       revoteDurationMs: 10_000,
     },
     night: null,
+    nightResolution: null,
     dayVote: null,
     journal: [],
   }
@@ -213,6 +219,7 @@ export function createDemoRoom(
       revoteDurationMs: 10_000,
     },
     night: null,
+    nightResolution: null,
     dayVote: null,
     journal: [],
   }
@@ -423,6 +430,7 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
   }
   state.phase = 'NIGHT'
   state.dayVote = null
+  state.nightResolution = null
   state.night = {
     number: state.dayNumber,
     calls: createNightCalls(state),
@@ -836,6 +844,99 @@ function completeNightCall(
   finishCall(state, roleId, environment)
 }
 
+function resolveNightConsequences(
+  state: RoomState,
+  environment: GameEnvironment,
+): void {
+  if (state.lifecycle !== 'IN_GAME' || state.phase !== 'NIGHT' || !state.night) {
+    fail('Chỉ có thể phân giải hiệu ứng trong Đêm của ván đang chơi.')
+  }
+  if (state.nightResolution?.nightNumber === state.dayNumber) return
+
+  const readiness = getNightResolutionReadiness({
+    configuredRoleIds: state.config.nightRoleIds,
+    calls: state.night.calls,
+  })
+  if (!readiness.ready) {
+    fail('Chưa hoàn tất các lượt gọi đóng góp cho phân giải Đêm.')
+  }
+
+  const wolfTargetId =
+    state.night.actionsByRole.werewolf?.result?.targetId ?? undefined
+  const protectorTargetId = Object.values(
+    state.night.actionsByRole.protector?.selections ?? {},
+  ).find((targetId): targetId is PlayerId => typeof targetId === 'string')
+  const effects = wolfTargetId
+    ? [createWolfAttackEffect(environment.nextId(), wolfTargetId)]
+    : []
+  const result = resolveNightEffects(effects, protectorTargetId)
+  const resolvedAt = environment.now()
+
+  state.nightResolution = {
+    id: environment.nextId(),
+    nightNumber: state.dayNumber,
+    resolvedAt,
+    ...result,
+  }
+
+  for (const effect of result.effects) {
+    appendEvent(state, environment, 'WOLF_ATTACK_CREATED', {
+      actorRoleId: 'werewolf',
+      targetPlayerId: effect.targetPlayerId,
+      resolution: effect.outcome,
+      metadata: {
+        effectId: effect.id,
+        sourceType: effect.sourceType,
+        category: effect.category,
+        lethal: effect.lethal,
+        protectorBlockable: effect.protectorBlockable,
+      },
+    })
+    if (effect.outcome === 'BLOCKED_BY_PROTECTOR') {
+      appendEvent(state, environment, 'WOLF_ATTACK_BLOCKED', {
+        actorRoleId: 'werewolf',
+        targetPlayerId: effect.targetPlayerId,
+        resolution: effect.outcome,
+        metadata: {
+          effectId: effect.id,
+          blockSourceType: effect.blockSourceType,
+          blockSourceRoleId: effect.blockSourceRoleId,
+        },
+      })
+    }
+  }
+
+  for (const playerId of result.provisionalDeathCandidateIds) {
+    appendEvent(state, environment, 'NIGHT_DEATH_CANDIDATE_CREATED', {
+      actorRoleId: 'werewolf',
+      targetPlayerId: playerId,
+      resolution: 'PROVISIONAL_PRE_WITCH',
+      metadata: {
+        sourceEffectIds: result.effects
+          .filter(
+            (effect) =>
+              effect.targetPlayerId === playerId &&
+              effect.lethal &&
+              effect.outcome === 'UNBLOCKED',
+          )
+          .map((effect) => effect.id),
+      },
+    })
+  }
+
+  appendEvent(state, environment, 'NIGHT_RESOLUTION_COMPLETED', {
+    actorRoleId: 'werewolf',
+    resolution: result.outcome,
+    metadata: {
+      resolutionId: state.nightResolution.id,
+      effectCount: result.effects.length,
+      provisionalDeathCandidateCount:
+        result.provisionalDeathCandidateIds.length,
+      finalDeathsApplied: false,
+    },
+  })
+}
+
 function startDay(state: RoomState, environment: GameEnvironment): void {
   if (state.phase !== 'NIGHT' || !state.night) {
     fail('Chỉ chuyển sang ngày từ phase đêm.')
@@ -1037,6 +1138,9 @@ export function applyRoomCommand(
       break
     case 'COMPLETE_NIGHT_CALL':
       completeNightCall(state, command.roleId, environment)
+      break
+    case 'RESOLVE_NIGHT_EFFECTS':
+      resolveNightConsequences(state, environment)
       break
     case 'START_DAY':
       startDay(state, environment)
