@@ -13,6 +13,7 @@
     "qa:room-flow": "node scripts/room-flow-qa.mjs",
     "qa:local-safety": "node scripts/local-safety-qa.mjs",
     "qa:touch": "node scripts/touch-target-qa.mjs",
+    "qa:lan-http": "node scripts/lan-http-request-id-qa.mjs",
     "qa:supabase": "node scripts/supabase-remote-qa.mjs"
   },
   "dependencies": {

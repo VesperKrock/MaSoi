@@ -1,3 +1,4 @@
+import { createRequestId } from '../../lib/request-id'
 import { createJournalEvent } from '../journal/journal'
 import { getNightRoleIds, roleDefinitions } from '../roles/role-definitions'
 import {
@@ -61,7 +62,7 @@ const aliases = [
 
 export const defaultGameEnvironment: GameEnvironment = {
   now: () => Date.now(),
-  nextId: () => crypto.randomUUID(),
+  nextId: createRequestId,
   random: systemRandom,
 }
 

@@ -24,6 +24,7 @@ import type {
   RoomAudience,
   RoomSnapshot,
 } from '../../state/room-projection'
+import { createRequestId } from '../../lib/request-id'
 import {
   roomTransportErrorCodes,
   type CreateRoomResult,
@@ -349,12 +350,13 @@ export class SupabaseRoomTransport implements RoomTransport {
 
   async createRoom(
     setup: RoomSetupInput,
-    requestId = crypto.randomUUID(),
+    requestId?: string,
   ): Promise<CreateRoomResult> {
     try {
+      const resolvedRequestId = requestId ?? createRequestId()
       await this.ensureAnonymousIdentity()
       const { data, error } = await this.client.rpc('ms1a_create_room', {
-        p_request_id: requestId,
+        p_request_id: resolvedRequestId,
         p_seat_count: setup.seatCount,
         p_role_config: setup.roleComposition,
         p_wolf_policy: setup.wolfPolicy,

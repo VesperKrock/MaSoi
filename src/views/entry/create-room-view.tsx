@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AppShell } from '../../components/app-shell'
 import {
   countSelectedRoles,
@@ -15,6 +15,7 @@ import {
   type RoleId,
   type RoleMarketGroup,
 } from '../../domain/roles/classic-catalog'
+import { initializeRequestId } from '../../lib/request-id'
 import type { RoomTransport } from '../../transport/room-transport'
 
 interface CreateRoomViewProps {
@@ -29,7 +30,7 @@ const groupOrder: RoleMarketGroup[] = [
 ]
 
 export function CreateRoomView({ transport }: CreateRoomViewProps) {
-  const createRequestId = useRef(crypto.randomUUID())
+  const [createRequest] = useState(() => initializeRequestId())
   const [seatCount, setSeatCount] = useState(7)
   const [composition, setComposition] = useState<RoleComposition>(() =>
     defaultRoleComposition(7),
@@ -43,6 +44,7 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
     [composition, seatCount, wolfPolicy],
   )
   const selectedCount = countSelectedRoles(composition)
+  const displayedError = error || (createRequest.ok ? '' : createRequest.error)
 
   const setQuantity = (roleId: RoleId, quantity: number) => {
     const role = classicRoleCatalog.find((entry) => entry.id === roleId)
@@ -56,6 +58,10 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
 
   const createRoom = async () => {
     if (!validation.valid) return
+    if (!createRequest.ok) {
+      setError(createRequest.error)
+      return
+    }
     setSubmitting(true)
     setError('')
     const result = await transport.createRoom(
@@ -64,7 +70,7 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
         roleComposition: composition,
         wolfPolicy,
       },
-      createRequestId.current,
+      createRequest.requestId,
     )
     setSubmitting(false)
     if (!result.ok || !result.roomId) {
@@ -178,11 +184,11 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
           <div>
             <strong>{selectedCount} / {seatCount} lá</strong>
             <span>{countMessage}</span>
-            {error && <span className="inline-error">{error}</span>}
+            {displayedError && <span className="inline-error">{displayedError}</span>}
           </div>
           <button
             className="button primary"
-            disabled={!validation.valid || submitting}
+            disabled={!validation.valid || submitting || !createRequest.ok}
             onClick={() => void createRoom()}
           >
             {submitting ? 'Đang tạo…' : 'Tạo phòng'}
