@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
+  cardAssetUrl,
   canonicalRoleIdForAssetFilename,
   classicRoleCatalog,
   knownDanglingRoleReferences,
@@ -79,5 +80,13 @@ describe('Classic canonical catalog', () => {
     expect(classicRoleCatalog.map((role) => role.displayName)).not.toContain(
       'Anh Hùng',
     )
+  })
+
+  it('resolves Classic artwork under the GitHub Pages project base', () => {
+    for (const role of classicRoleCatalog) {
+      expect(cardAssetUrl(role.assetFiles[0], '/MaSoi/')).toBe(
+        `/MaSoi/assets/cards/classic/${role.assetFiles[0]}`,
+      )
+    }
   })
 })

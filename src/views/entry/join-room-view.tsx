@@ -3,6 +3,7 @@ import {
   joinFlowAfterValidation,
   type JoinFlowState,
 } from '../../domain/game/join-flow'
+import { appUrl } from '../../lib/app-url'
 import type { RoomTransport } from '../../transport/room-transport'
 
 interface JoinRoomViewProps {
@@ -47,9 +48,9 @@ export function JoinRoomView({ transport }: JoinRoomViewProps) {
       setNameError(result.error ?? 'Không thể vào phòng.')
       return
     }
-    window.location.assign(
+    window.location.assign(appUrl(
       `?room=${encodeURIComponent(result.roomId)}&player=${encodeURIComponent(result.playerId)}${transport.kind === 'LOCAL' ? '&transport=local' : ''}`,
-    )
+    ))
   }
 
   const formattedCode = code.padEnd(6, '·').split('').join(' ')
@@ -60,7 +61,7 @@ export function JoinRoomView({ transport }: JoinRoomViewProps) {
       data-player-viewport
       data-surface={flow.step === 'NAME' ? 'name-modal' : 'join'}
     >
-      <a className="entry-back" href={transport.kind === 'LOCAL' ? '/?transport=local' : '/'}>← Trang chủ</a>
+      <a className="entry-back" href={appUrl(transport.kind === 'LOCAL' ? '?transport=local' : '')}>← Trang chủ</a>
       <section className="join-card">
         <p className="eyebrow">
           {transport.kind === 'LOCAL' ? 'DEV local · Cùng trình duyệt' : 'Phòng nhiều thiết bị'}

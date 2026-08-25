@@ -1,3 +1,5 @@
+import { publicAssetUrl } from '../../lib/app-url'
+
 export type RoleMarketGroup =
   | 'VILLAGE'
   | 'WEREWOLF'
@@ -18,7 +20,7 @@ export interface RoleCatalogEntryBase {
   gameplaySupport: 'MS0A_IMPLEMENTED' | 'CATALOG_ONLY'
 }
 
-const assetRoot = '/assets/cards/classic/'
+const assetRoot = 'assets/cards/classic/'
 
 /**
  * Product Owner-approved Classic source of truth for MS-0B.
@@ -182,8 +184,11 @@ export const knownDanglingRoleReferences = [
   },
 ] as const
 
-export function cardAssetUrl(filename: string): string {
-  return `${assetRoot}${filename}`
+export function cardAssetUrl(
+  filename: string,
+  basePath: string = import.meta.env.BASE_URL,
+): string {
+  return publicAssetUrl(`${assetRoot}${filename}`, basePath)
 }
 
 export function canonicalRoleIdForAssetFilename(

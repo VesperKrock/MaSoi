@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { appUrl } from '../lib/app-url'
 import type { RoomTransportKind } from '../transport/room-transport'
 
 interface AppShellProps {
@@ -8,7 +9,9 @@ interface AppShellProps {
 }
 
 export function AppShell({ roomCode, transportKind, children }: AppShellProps) {
-  const homeHref = transportKind === 'LOCAL' ? '/?transport=local' : '/'
+  const homeHref = appUrl(
+    transportKind === 'LOCAL' ? '?transport=local' : '',
+  )
   const authorityLabel =
     transportKind === 'SUPABASE'
       ? 'SERVER · NHIỀU THIẾT BỊ'

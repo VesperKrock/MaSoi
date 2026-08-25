@@ -1,4 +1,5 @@
 import type { RoomCommand } from '../../domain/game/types'
+import { cardAssetUrl } from '../../domain/roles/classic-catalog'
 import type { PlayerRoomSnapshot } from '../../state/room-projection'
 import type { RoomTransport } from '../../transport/room-transport'
 import { JoinRoomView } from '../entry/join-room-view'
@@ -28,7 +29,7 @@ const baseSnapshot: PlayerRoomSnapshot = {
     displayName: 'Tiên Tri',
     factionMeaning: 'Dân Làng',
     rulesText: 'Mỗi đêm chọn một người để xem người đó là Ma Sói hay không.',
-    cardAsset: '/assets/cards/classic/Tiên Tri.jpg',
+    cardAsset: cardAssetUrl('Tiên Tri.jpg'),
   },
   roleRevealPending: false,
 }

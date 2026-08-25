@@ -1,3 +1,4 @@
+import { appUrl } from '../../lib/app-url'
 import type { RoomTransportKind } from '../../transport/room-transport'
 
 export function LandingView({
@@ -21,10 +22,10 @@ export function LandingView({
         <p>Thay thế bộ bài giấy và trí nhớ của Quản trò.</p>
       </div>
       <div className="entry-actions">
-        <a className="button primary full link-button" href={`?screen=create${localSuffix}`} data-required-control>
+        <a className="button primary full link-button" href={appUrl(`?screen=create${localSuffix}`)} data-required-control>
           Tạo phòng
         </a>
-        <a className="button secondary full link-button" href={`?screen=join${localSuffix}`} data-required-control>
+        <a className="button secondary full link-button" href={appUrl(`?screen=join${localSuffix}`)} data-required-control>
           Vào phòng
         </a>
       </div>

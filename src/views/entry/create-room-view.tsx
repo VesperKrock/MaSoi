@@ -15,6 +15,7 @@ import {
   type RoleId,
   type RoleMarketGroup,
 } from '../../domain/roles/classic-catalog'
+import { appUrl } from '../../lib/app-url'
 import { initializeRequestId } from '../../lib/request-id'
 import type { RoomTransport } from '../../transport/room-transport'
 
@@ -77,9 +78,9 @@ export function CreateRoomView({ transport }: CreateRoomViewProps) {
       setError(result.error ?? 'Không thể tạo phòng.')
       return
     }
-    window.location.assign(
+    window.location.assign(appUrl(
       `?room=${encodeURIComponent(result.roomId)}&as=moderator${transport.kind === 'LOCAL' ? '&transport=local' : ''}`,
-    )
+    ))
   }
 
   const countMessage =

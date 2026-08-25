@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { AppShell } from './components/app-shell'
+import { appUrl } from './lib/app-url'
 import { useRoom } from './state/use-room'
 import type { RoomAudience } from './state/room-projection'
 import type { RoomTransport } from './transport/room-transport'
@@ -51,7 +52,7 @@ function RoomExperience({
         </div>
         <a
           className="button primary link-button"
-          href={transport.kind === 'LOCAL' ? '/?transport=local' : '/'}
+          href={appUrl(transport.kind === 'LOCAL' ? '?transport=local' : '')}
           data-required-control
         >
           Về trang chủ

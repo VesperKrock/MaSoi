@@ -14,7 +14,9 @@
     "qa:local-safety": "node scripts/local-safety-qa.mjs",
     "qa:touch": "node scripts/touch-target-qa.mjs",
     "qa:lan-http": "node scripts/lan-http-request-id-qa.mjs",
-    "qa:supabase": "node scripts/supabase-remote-qa.mjs"
+    "qa:supabase": "node scripts/supabase-remote-qa.mjs",
+    "qa:pages-base": "node scripts/pages-base-path-qa.mjs",
+    "qa:pages-deployed": "node scripts/pages-deployment-qa.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
