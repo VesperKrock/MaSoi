@@ -253,6 +253,47 @@ describe('Supabase transport privacy and selection', () => {
     expect(signInAnonymously).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes after the private channel subscribes so setup broadcasts cannot be missed', async () => {
+    let subscriptionStatus: ((status: string) => void) | undefined
+    const channel = {
+      on: vi.fn(),
+      subscribe: vi.fn((listener: (status: string) => void) => {
+        subscriptionStatus = listener
+        return channel
+      }),
+    }
+    channel.on.mockReturnValue(channel)
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        room,
+        self: players[0],
+        players,
+        assignment: null,
+      },
+      error: null,
+    })
+    const client = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { user: { id: 'auth-a' } } },
+          error: null,
+        }),
+        signInAnonymously: vi.fn(),
+      },
+      rpc,
+      channel: vi.fn(() => channel),
+    } as unknown as SupabaseClient
+    const listener = vi.fn()
+    const transport = new SupabaseRoomTransport(client)
+
+    transport.subscribe(room.id, { kind: 'PLAYER', playerId: players[0].id }, listener)
+    await vi.waitFor(() => expect(subscriptionStatus).toBeTypeOf('function'))
+    subscriptionStatus?.('SUBSCRIBED')
+
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce())
+    expect(rpc).toHaveBeenCalledWith('ms1a_get_player_room', { p_room_id: room.id })
+  })
+
   it('never interprets a local request as fallback in production or configured mode', () => {
     const configured = {
       VITE_SUPABASE_URL: 'https://example.supabase.co',

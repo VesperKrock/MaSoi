@@ -488,7 +488,9 @@ export class SupabaseRoomTransport implements RoomTransport {
           { event: 'room_changed' },
           refresh,
         )
-        .subscribe()
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') refresh()
+        })
       this.channels.add(channel)
     })
 

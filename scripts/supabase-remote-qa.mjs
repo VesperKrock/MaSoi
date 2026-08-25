@@ -487,7 +487,9 @@ async function browserContextProof() {
       await join(players[index], code, `BF-${testRun}-${index + 1}`)
     }
     await moderatorPage.waitForFunction(() => document.querySelector('.lobby-count strong')?.textContent?.includes('7 / 7'))
+    await playerPage.waitForFunction(() => document.querySelector('.player-lobby small')?.textContent?.includes('7 / 7'))
     await moderatorPage.click('.lobby-control-panel .button.primary')
+    await moderatorPage.waitForSelector('.reveal-moderator')
     await playerPage.waitForSelector('[data-surface="reveal"]')
     const revealedRole = await playerPage.$eval('.role-identity-caption strong', (node) => node.textContent)
 
