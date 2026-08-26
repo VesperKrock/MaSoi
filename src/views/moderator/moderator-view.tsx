@@ -38,6 +38,29 @@ function playerName(state: RoomState, playerId: PlayerId | null | undefined) {
   return player ? playerLabel(player) : playerId
 }
 
+function factionRuntimeLabel(
+  state: RoomState,
+  playerId: PlayerId,
+): string | null {
+  const halfWolf = state.factionTransitions?.halfWolves[playerId]
+  if (halfWolf) {
+    return halfWolf.status === 'PENDING_TRANSFORMATION'
+      ? 'Dân · chờ hóa'
+      : halfWolf.status === 'TRANSFORMED'
+        ? 'Đã hóa Sói'
+        : halfWolf.status === 'CANCELED'
+          ? 'Dân · đã hủy hóa'
+          : 'Dân'
+  }
+  const traitor = state.factionTransitions?.traitors[playerId]
+  if (traitor) {
+    return traitor.status === 'CONVERTED_VILLAGE'
+      ? 'Đã về phe Dân'
+      : 'Phe Sói'
+  }
+  return null
+}
+
 function PhaseHeader({ state }: { state: RoomState }) {
   const label =
     state.phase === 'SETUP'
@@ -409,6 +432,8 @@ function NightResolutionPanel({ state, dispatch }: ModeratorViewProps) {
             </span>
             {resolution.outcome === 'BLOCKED' ? (
               <strong>Bảo Vệ đã chặn đòn tấn công.</strong>
+            ) : resolution.outcome === 'BITE_SCHEDULED' ? (
+              <strong>Bán Sói: chờ hóa từ Đêm kế tiếp.</strong>
             ) : (
               <strong>
                 Ứng viên tử vong đêm nay: {playerName(state, wolfEffect?.targetPlayerId)}
@@ -750,6 +775,9 @@ function Roster({ state, dispatch }: ModeratorViewProps) {
                   {assignment
                     ? classicRoleById[assignment.roleId].displayName
                     : 'Chưa gán'}
+                  {factionRuntimeLabel(state, player.id)
+                    ? ` · ${factionRuntimeLabel(state, player.id)}`
+                    : ''}
                 </span>
               </div>
               <button

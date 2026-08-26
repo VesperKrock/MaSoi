@@ -29,7 +29,9 @@
     "qa:hunter-remote": "node scripts/hunter-morning-supabase-qa.mjs --remote",
     "qa:d2-local": "node scripts/day-cycle-supabase-qa.mjs --local",
     "qa:d2-remote": "node scripts/day-cycle-supabase-qa.mjs --remote",
-    "qa:d2-touch": "node scripts/zero-scroll-qa.mjs day-vote hunter-revenge hunter-pending"
+    "qa:d2-touch": "node scripts/zero-scroll-qa.mjs day-vote hunter-revenge hunter-pending",
+    "qa:faction-local": "node scripts/faction-transition-supabase-qa.mjs --local",
+    "qa:faction-remote": "node scripts/faction-transition-supabase-qa.mjs --remote"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

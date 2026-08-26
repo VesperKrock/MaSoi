@@ -1,5 +1,6 @@
 import type { RoleId } from '../roles/classic-catalog'
 import type { PersistedNightResolution } from '../gameplay/night-resolution'
+import type { FactionTransitionState } from '../gameplay/faction-transitions'
 import type {
   WitchDecision,
   PersistedWitchCheckpoint,
@@ -179,6 +180,10 @@ export type JournalEventType =
   | 'HUNTER_HANGING_REVEALED'
   | 'HUNTER_REVENGE_RESOLVED'
   | 'NEXT_NIGHT_STARTED'
+  | 'HALF_WOLF_BITE_SCHEDULED'
+  | 'HALF_WOLF_TRANSFORMED'
+  | 'HALF_WOLF_TRANSFORMATION_CANCELED'
+  | 'TRAITOR_CONVERTED_TO_VILLAGE'
   | 'PLAYER_DEATH'
   | 'MODERATOR_OVERRIDE'
   | 'PHASE_CHANGED'
@@ -224,6 +229,7 @@ export interface RoomState {
   witchResources?: WitchResources | null
   witchCheckpoint?: PersistedWitchCheckpoint | null
   dayVote: DayVoteState | null
+  factionTransitions?: FactionTransitionState
   journal: JournalEvent[]
 }
 

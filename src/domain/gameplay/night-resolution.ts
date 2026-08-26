@@ -4,7 +4,15 @@ export type NightEffectCategory =
   | 'HOSTILE_VILLAIN_ATTACK'
   | 'NON_VILLAIN_LETHAL_EFFECT'
 
-export type NightEffectOutcome = 'BLOCKED_BY_PROTECTOR' | 'UNBLOCKED'
+export type NightEffectOutcome =
+  | 'BLOCKED_BY_PROTECTOR'
+  | 'UNBLOCKED'
+  | 'HALF_WOLF_BITE_SCHEDULED'
+
+export interface NightEffectConversion {
+  kind: 'HALF_WOLF_TRANSFORMATION'
+  dueNightNumber: number
+}
 
 export interface NightEffectActivationCondition {
   kind: 'SOURCE_PLAYER_FINAL_NIGHT_DEATH'
@@ -24,6 +32,7 @@ export interface NightEffectInput {
   targetPlayerId: string
   lethal: boolean
   protectorBlockable: boolean
+  conversion?: NightEffectConversion
   activationCondition?: NightEffectActivationCondition
 }
 
@@ -35,7 +44,7 @@ export interface ResolvedNightEffect extends NightEffectInput {
 }
 
 export interface NightResolutionResult {
-  outcome: 'NO_ATTACK' | 'BLOCKED' | 'UNBLOCKED'
+  outcome: 'NO_ATTACK' | 'BLOCKED' | 'UNBLOCKED' | 'BITE_SCHEDULED'
   effects: ResolvedNightEffect[]
   provisionalDeathCandidateIds: string[]
 }
@@ -80,6 +89,26 @@ export function createWolfAttackEffect(
   }
 }
 
+export function createHalfWolfBiteEffect(
+  id: string,
+  targetPlayerId: string,
+  nightNumber: number,
+): NightEffectInput {
+  return {
+    id,
+    sourceType: 'WOLF_ATTACK',
+    sourceRoleId: 'werewolf',
+    category: 'HOSTILE_VILLAIN_ATTACK',
+    targetPlayerId,
+    lethal: false,
+    protectorBlockable: true,
+    conversion: {
+      kind: 'HALF_WOLF_TRANSFORMATION',
+      dueNightNumber: nightNumber + 1,
+    },
+  }
+}
+
 export function getNightResolutionReadiness(
   input: NightResolutionReadinessInput,
 ): NightResolutionReadiness {
@@ -116,7 +145,15 @@ export function resolveNightEffects(
           blockSourceType: 'PROTECTOR_SHIELD',
           blockSourceRoleId: 'protector',
         }
-      : {
+      : effect.conversion
+        ? {
+            ...effect,
+            outcome: 'HALF_WOLF_BITE_SCHEDULED',
+            activationStatus: effect.activationCondition
+              ? 'CONDITIONAL'
+              : undefined,
+          }
+        : {
           ...effect,
           outcome: 'UNBLOCKED',
           activationStatus: effect.activationCondition
@@ -143,7 +180,11 @@ export function resolveNightEffects(
               (effect) => effect.outcome === 'BLOCKED_BY_PROTECTOR',
             )
           ? 'BLOCKED'
-          : 'UNBLOCKED',
+          : resolvedEffects.every(
+                (effect) => effect.outcome === 'HALF_WOLF_BITE_SCHEDULED',
+              )
+            ? 'BITE_SCHEDULED'
+            : 'UNBLOCKED',
     effects: resolvedEffects,
     provisionalDeathCandidateIds,
   }

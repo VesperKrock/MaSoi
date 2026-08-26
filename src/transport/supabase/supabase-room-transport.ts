@@ -2,6 +2,10 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { getNightRoleIds } from '../../domain/roles/role-definitions'
 import type { ResolvedNightEffect } from '../../domain/gameplay/night-resolution'
 import {
+  normalizeFactionTransitionState,
+  type FactionTransitionState,
+} from '../../domain/gameplay/faction-transitions'
+import {
   cardAssetUrl,
   classicRoleById,
   type RoleId,
@@ -414,7 +418,8 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
       (entry.category !== 'HOSTILE_VILLAIN_ATTACK' &&
         entry.category !== 'NON_VILLAIN_LETHAL_EFFECT') ||
       (entry.outcome !== 'BLOCKED_BY_PROTECTOR' &&
-        entry.outcome !== 'UNBLOCKED')
+        entry.outcome !== 'UNBLOCKED' &&
+        entry.outcome !== 'HALF_WOLF_BITE_SCHEDULED')
     ) {
       throw new Error('BACKEND_UNAVAILABLE')
     }
@@ -430,6 +435,15 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
       lethal: entry.lethal === true,
       protectorBlockable: entry.protectorBlockable === true,
       outcome: entry.outcome,
+      conversion:
+        isRecord(entry.conversion) &&
+        entry.conversion.kind === 'HALF_WOLF_TRANSFORMATION' &&
+        Number.isInteger(entry.conversion.dueNightNumber)
+          ? {
+              kind: 'HALF_WOLF_TRANSFORMATION' as const,
+              dueNightNumber: Number(entry.conversion.dueNightNumber),
+            }
+          : undefined,
       blockSourceType:
         entry.blockSourceType === 'PROTECTOR_SHIELD'
           ? ('PROTECTOR_SHIELD' as const)
@@ -459,7 +473,8 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
   const outcome =
     value.outcome === 'NO_ATTACK' ||
     value.outcome === 'BLOCKED' ||
-    value.outcome === 'UNBLOCKED'
+    value.outcome === 'UNBLOCKED' ||
+    value.outcome === 'BITE_SCHEDULED'
       ? value.outcome
       : null
   if (!outcome) throw new Error('BACKEND_UNAVAILABLE')
@@ -474,6 +489,81 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
     ),
     resolvedAt: parseTimestamp(value.resolvedAt),
   }
+}
+
+function readFactionTransitions(
+  value: unknown,
+  assignments: readonly RoleAssignment[],
+): FactionTransitionState {
+  const normalized = normalizeFactionTransitionState(assignments)
+  if (value === null || value === undefined) return normalized
+  if (!isRecord(value)) throw new Error('BACKEND_UNAVAILABLE')
+
+  if (isRecord(value.halfWolves)) {
+    for (const [playerId, raw] of Object.entries(value.halfWolves)) {
+      if (!isRecord(raw) || raw.playerId !== playerId) {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      const status = raw.status
+      if (
+        status !== 'VILLAGE' &&
+        status !== 'PENDING_TRANSFORMATION' &&
+        status !== 'TRANSFORMED' &&
+        status !== 'CANCELED'
+      ) {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      normalized.halfWolves[playerId] = {
+        playerId,
+        status,
+        bittenNightNumber:
+          typeof raw.bittenNightNumber === 'number'
+            ? raw.bittenNightNumber
+            : undefined,
+        transformDueNightNumber:
+          typeof raw.transformDueNightNumber === 'number'
+            ? raw.transformDueNightNumber
+            : undefined,
+        bittenAt: raw.bittenAt ? parseTimestamp(raw.bittenAt) : undefined,
+        transformedAt: raw.transformedAt
+          ? parseTimestamp(raw.transformedAt)
+          : undefined,
+        canceledAt: raw.canceledAt
+          ? parseTimestamp(raw.canceledAt)
+          : undefined,
+        cancellationReason:
+          raw.cancellationReason === 'DIED_BEFORE_TRANSFORMATION'
+            ? 'DIED_BEFORE_TRANSFORMATION'
+            : undefined,
+      }
+    }
+  }
+
+  if (isRecord(value.traitors)) {
+    for (const [playerId, raw] of Object.entries(value.traitors)) {
+      if (!isRecord(raw) || raw.playerId !== playerId) {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      if (
+        raw.status !== 'WOLF_ALIGNED' &&
+        raw.status !== 'CONVERTED_VILLAGE'
+      ) {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      normalized.traitors[playerId] = {
+        playerId,
+        status: raw.status,
+        convertedAt: raw.convertedAt
+          ? parseTimestamp(raw.convertedAt)
+          : undefined,
+        conversionReason:
+          raw.conversionReason === 'NO_LIVING_BITE_CAPABLE_WOLF'
+            ? 'NO_LIVING_BITE_CAPABLE_WOLF'
+            : undefined,
+      }
+    }
+  }
+  return normalized
 }
 
 function readWitchCheckpoint(value: unknown): PersistedWitchCheckpoint | null {
@@ -913,6 +1003,15 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
     witchResources: witchCheckpoint?.resourcesAfter ?? null,
     witchCheckpoint,
     dayVote: readModeratorDayVote(value.dayVote),
+    factionTransitions: readFactionTransitions(
+      value.factionTransitions,
+      assignments.map(
+        (assignment): RoleAssignment => ({
+          playerId: assignment.playerId,
+          roleId: assignment.roleId,
+        }),
+      ),
+    ),
     journal: [
       ...lifecycleJournal(payload),
       ...(value.night ? readRemoteNight(value.night).events : []),

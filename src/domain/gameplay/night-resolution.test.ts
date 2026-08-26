@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createHalfWolfBiteEffect,
   createWolfAttackEffect,
   getNightResolutionReadiness,
   resolveNightEffects,
@@ -10,6 +11,39 @@ const wolfAttack = (targetPlayerId: string) =>
   createWolfAttackEffect('effect-wolf', targetPlayerId)
 
 describe('MS-1B2 source-aware Night effect resolution', () => {
+  it('turns an unprotected Half-Wolf attack into a nonlethal scheduled bite', () => {
+    const result = resolveNightEffects(
+      [createHalfWolfBiteEffect('bite', 'half', 1)],
+      'someone-else',
+    )
+    expect(result).toMatchObject({
+      outcome: 'BITE_SCHEDULED',
+      provisionalDeathCandidateIds: [],
+      effects: [
+        {
+          sourceType: 'WOLF_ATTACK',
+          targetPlayerId: 'half',
+          lethal: false,
+          protectorBlockable: true,
+          outcome: 'HALF_WOLF_BITE_SCHEDULED',
+          conversion: {
+            kind: 'HALF_WOLF_TRANSFORMATION',
+            dueNightNumber: 2,
+          },
+        },
+      ],
+    })
+  })
+
+  it('lets Protector block a Half-Wolf bite before conversion is scheduled', () => {
+    const result = resolveNightEffects(
+      [createHalfWolfBiteEffect('bite', 'half', 1)],
+      'half',
+    )
+    expect(result.outcome).toBe('BLOCKED')
+    expect(result.effects[0].outcome).toBe('BLOCKED_BY_PROTECTOR')
+    expect(result.provisionalDeathCandidateIds).toEqual([])
+  })
   it('blocks a Wolf attack matching the Protector intent', () => {
     const result = resolveNightEffects([wolfAttack('chau')], 'chau')
 

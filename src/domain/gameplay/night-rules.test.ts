@@ -41,6 +41,25 @@ describe('MS-1B1 Wolf-group eligibility', () => {
       ]),
     ).toEqual(['wolf'])
   })
+
+  it('uses transformed Half-Wolf as bite-capable and excludes converted Traitor', () => {
+    expect(
+      getWolfGroupVoterIds([
+        { ...holder('half', 'half-wolf'), halfWolfTransformed: true },
+        { ...holder('traitor', 'traitor'), traitorConverted: true },
+      ]),
+    ).toEqual(['half'])
+  })
+
+  it('keeps untransformed Half-Wolf out of the Wolf group', () => {
+    expect(
+      getWolfGroupVoterIds([
+        holder('wolf', 'werewolf'),
+        holder('half', 'half-wolf'),
+        holder('traitor', 'traitor'),
+      ]),
+    ).toEqual(['wolf', 'traitor'])
+  })
 })
 
 describe('MS-1B1 Seer detection', () => {

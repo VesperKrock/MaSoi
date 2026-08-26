@@ -15,9 +15,17 @@ import {
 } from '../actions/target-rules'
 import { detectForSeer } from '../gameplay/night-rules'
 import {
+  createHalfWolfBiteEffect,
   createWolfAttackEffect,
   getNightResolutionReadiness,
 } from '../gameplay/night-resolution'
+import {
+  createInitialFactionTransitionState,
+  isHalfWolfTransformed,
+  reconcileFactionTransitions,
+  scheduleHalfWolfTransformation,
+  type FactionReconciliationStage,
+} from '../gameplay/faction-transitions'
 import { resolveNightEffectsWithHunter } from '../gameplay/hunter-night'
 import {
   finalizeWitchCheckpoint,
@@ -184,6 +192,7 @@ export function createProductRoom(
     witchResources: null,
     witchCheckpoint: null,
     dayVote: null,
+    factionTransitions: createInitialFactionTransitionState([]),
     journal: [],
   }
   appendEvent(state, environment, 'ROOM_CREATED', {
@@ -240,6 +249,7 @@ export function createDemoRoom(
     witchResources: null,
     witchCheckpoint: null,
     dayVote: null,
+    factionTransitions: createInitialFactionTransitionState(roleAssignments),
     journal: [],
   }
 
@@ -341,6 +351,9 @@ function lockAndAssignRoles(
     playerId: player.id,
     roleId: roleDeck[index],
   }))
+  state.factionTransitions = createInitialFactionTransitionState(
+    state.roleAssignments,
+  )
   state.roleRevealConfirmedPlayerIds = []
   state.lifecycle = 'ROLE_REVEAL'
   appendEvent(state, environment, 'ROOM_LOCKED', {
@@ -350,6 +363,35 @@ function lockAndAssignRoles(
     appendEvent(state, environment, 'ROLE_ASSIGNED', {
       actorPlayerId: assignment.playerId,
       actorRoleId: assignment.roleId,
+    })
+  }
+}
+
+function applyFactionReconciliation(
+  state: RoomState,
+  stage: FactionReconciliationStage,
+  environment: GameEnvironment,
+): void {
+  const result = reconcileFactionTransitions({
+    state: state.factionTransitions,
+    assignments: state.roleAssignments,
+    players: state.players,
+    nightNumber: state.dayNumber,
+    stage,
+    now: environment.now(),
+  })
+  state.factionTransitions = result.state
+  for (const event of result.events) {
+    appendEvent(state, environment, event.type, {
+      targetPlayerId: event.playerId,
+      actorRoleId:
+        event.type === 'TRAITOR_CONVERTED_TO_VILLAGE'
+          ? 'traitor'
+          : 'half-wolf',
+      resolution:
+        event.type === 'HALF_WOLF_TRANSFORMED'
+          ? `WOLF_FROM_NIGHT_${event.nightNumber}`
+          : event.reason,
     })
   }
 }
@@ -454,6 +496,7 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
     state.dayNumber += 1
   }
   state.phase = 'NIGHT'
+  applyFactionReconciliation(state, 'START_NIGHT', environment)
   state.dayVote = null
   state.nightResolution = null
   state.witchCheckpoint = null
@@ -826,7 +869,12 @@ function submitSeerInspection(
   action.selections[playerId] = targetId
   action.seer = {
     targetId,
-    result: detectForSeer(targetRoleId),
+    result: detectForSeer(targetRoleId, {
+      halfWolfTransformed: isHalfWolfTransformed(
+        state.factionTransitions,
+        targetId,
+      ),
+    }),
     acknowledged: false,
   }
   appendEvent(state, environment, 'SEER_INSPECTION', {
@@ -1102,8 +1150,20 @@ function resolveNightConsequences(
   const protectorTargetId = Object.values(
     state.night.actionsByRole.protector?.selections ?? {},
   ).find((targetId): targetId is PlayerId => typeof targetId === 'string')
+  const wolfTargetRoleId = wolfTargetId
+    ? getRoleIdForPlayer(state, wolfTargetId)
+    : undefined
   const effects = wolfTargetId
-    ? [createWolfAttackEffect(environment.nextId(), wolfTargetId)]
+    ? [
+        wolfTargetRoleId === 'half-wolf' &&
+        !isHalfWolfTransformed(state.factionTransitions, wolfTargetId)
+          ? createHalfWolfBiteEffect(
+              environment.nextId(),
+              wolfTargetId,
+              state.dayNumber,
+            )
+          : createWolfAttackEffect(environment.nextId(), wolfTargetId),
+      ]
     : []
   const hunterAction = state.night.actionsByRole.hunter
   const hunterPlayerId = hunterAction?.eligibleActorIds[0]
@@ -1136,6 +1196,31 @@ function resolveNightConsequences(
     ...result,
   }
 
+  const successfulHalfWolfBite = result.effects.find(
+    (effect) => effect.outcome === 'HALF_WOLF_BITE_SCHEDULED',
+  )
+  if (successfulHalfWolfBite) {
+    const scheduled = scheduleHalfWolfTransformation({
+      state: state.factionTransitions,
+      assignments: state.roleAssignments,
+      playerId: successfulHalfWolfBite.targetPlayerId,
+      bittenNightNumber: state.dayNumber,
+      now: resolvedAt,
+    })
+    state.factionTransitions = scheduled.state
+    if (scheduled.scheduled) {
+      appendEvent(state, environment, 'HALF_WOLF_BITE_SCHEDULED', {
+        actorRoleId: 'werewolf',
+        targetPlayerId: successfulHalfWolfBite.targetPlayerId,
+        resolution: 'TRANSFORM_NEXT_NIGHT',
+        metadata: {
+          effectId: successfulHalfWolfBite.id,
+          transformDueNightNumber: state.dayNumber + 1,
+        },
+      })
+    }
+  }
+
   for (const effect of result.effects) {
     appendEvent(
       state,
@@ -1154,6 +1239,7 @@ function resolveNightConsequences(
           lethal: effect.lethal,
           protectorBlockable: effect.protectorBlockable,
           activationCondition: effect.activationCondition,
+          conversion: effect.conversion,
         },
       },
     )
@@ -1317,6 +1403,7 @@ function finalizeNightCheckpoint(
       metadata: { sourceEffectIds: death.sourceEffectIds },
     })
   }
+  applyFactionReconciliation(state, 'AFTER_DEATH', environment)
   appendEvent(state, environment, 'WITCH_CHECKPOINT_COMPLETED', {
     actorRoleId: witchConfigured ? 'witch' : undefined,
     resolution: 'FINALIZED',
@@ -1448,6 +1535,7 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
     const effect = createDayHangingEffect(environment.nextId(), targetId)
     state.dayVote.hangingEffect = effect
     target.alive = false
+    applyFactionReconciliation(state, 'AFTER_DEATH', environment)
     appendEvent(state, environment, 'DAY_HANGING_CREATED', {
       targetPlayerId: targetId,
       resolution: 'FINAL',
@@ -1504,6 +1592,7 @@ function submitHunterRevenge(
       targetId,
     )
     target.alive = false
+    applyFactionReconciliation(state, 'AFTER_DEATH', environment)
     revenge.effect = effect
     appendEvent(state, environment, 'PLAYER_DEATH', {
       actorPlayerId: playerId,
@@ -1552,6 +1641,7 @@ function setPlayerAlive(
       resolution: 'MODERATOR_OVERRIDE',
       metadata: { reason: reason?.trim() || undefined },
     })
+    applyFactionReconciliation(state, 'AFTER_DEATH', environment)
   }
 }
 

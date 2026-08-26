@@ -1,10 +1,13 @@
 import { roleDefinitions } from '../roles/role-definitions'
-import { classicRoleById } from '../roles/classic-catalog'
 import type { PlayerId, RoleId, RoomState } from '../game/types'
 import {
   canProtectorTarget,
   getWolfGroupVoterIds,
 } from '../gameplay/night-rules'
+import {
+  isHalfWolfTransformed,
+  isTraitorConverted,
+} from '../gameplay/faction-transitions'
 
 export function getRoleIdForPlayer(
   state: RoomState,
@@ -38,6 +41,14 @@ function roleHolders(state: RoomState) {
     alive:
       state.players.find((player) => player.id === assignment.playerId)?.alive ??
       false,
+    halfWolfTransformed: isHalfWolfTransformed(
+      state.factionTransitions,
+      assignment.playerId,
+    ),
+    traitorConverted: isTraitorConverted(
+      state.factionTransitions,
+      assignment.playerId,
+    ),
   }))
 }
 
@@ -74,10 +85,8 @@ export function getEligibleRoleTargets(
     .filter((player) => player.alive)
     .filter((player) => {
       if (definition.targetRule === 'LIVING_NON_WOLF') {
-        const targetRoleId = getRoleIdForPlayer(state, player.id)
-        return targetRoleId
-          ? classicRoleById[targetRoleId].marketGroup !== 'WEREWOLF'
-          : true
+        const wolfActorIds = new Set(getEligibleWolfGroupActors(state))
+        return !wolfActorIds.has(player.id)
       }
 
       if (definition.targetRule === 'LIVING_OTHER') {

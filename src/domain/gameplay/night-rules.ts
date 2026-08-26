@@ -5,6 +5,7 @@ export interface NightRoleHolder {
   roleId: RoleId
   alive: boolean
   halfWolfTransformed?: boolean
+  traitorConverted?: boolean
 }
 
 export type SeerDetection = 'WOLF' | 'NON_WOLF'
@@ -26,7 +27,7 @@ export function getWolfGroupVoterIds(
       (holder) =>
         holder.alive &&
         (holder.roleId === 'werewolf' ||
-          holder.roleId === 'traitor' ||
+          (holder.roleId === 'traitor' && holder.traitorConverted !== true) ||
           (holder.roleId === 'half-wolf' && holder.halfWolfTransformed === true)),
     )
     .map((holder) => holder.playerId)
