@@ -143,6 +143,12 @@ Object.assign(serverMessages, {
   WITCH_POISON_UNAVAILABLE: 'Bình độc không còn khả dụng.',
   WITCH_POISON_FORBIDDEN_NIGHT_ONE: 'Không được dùng bình độc trong Đêm 1.',
   WITCH_POISON_SELF_TARGET: 'Phù Thủy không thể dùng bình độc lên chính mình.',
+  HUNTER_PRELOCK_REQUIRED:
+    'Hãy chọn một mục tiêu hoặc Không ai trước khi khóa lựa chọn Thợ Săn.',
+  HUNTER_PRELOCK_ALREADY_CONFIRMED:
+    'Lựa chọn Thợ Săn của Đêm này đã được khóa.',
+  MORNING_NOT_READY:
+    'Chỉ có thể công bố buổi sáng sau khi tử vong Đêm đã được chốt ổn định.',
 })
 
 const machineCodes = new Set(Object.keys(serverMessages))
@@ -286,6 +292,8 @@ function readNightAction(value: unknown): NightAction {
     kind:
       value.kind === 'WOLF_VOTE'
         ? 'WOLF_VOTE'
+        : value.kind === 'HUNTER_PRELOCK'
+          ? 'HUNTER_PRELOCK'
         : value.kind === 'WITCH_DECISION'
           ? 'WITCH_DECISION'
           : 'SELECT_TARGET',
@@ -420,6 +428,22 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
         entry.blockSourceRoleId === 'protector'
           ? ('protector' as const)
           : undefined,
+      activationCondition:
+        isRecord(entry.activationCondition) &&
+        entry.activationCondition.kind ===
+          'SOURCE_PLAYER_FINAL_NIGHT_DEATH' &&
+        typeof entry.activationCondition.sourcePlayerId === 'string'
+          ? {
+              kind: 'SOURCE_PLAYER_FINAL_NIGHT_DEATH' as const,
+              sourcePlayerId: entry.activationCondition.sourcePlayerId,
+            }
+          : undefined,
+      activationStatus:
+        entry.activationStatus === 'CONDITIONAL' ||
+        entry.activationStatus === 'ACTIVATED' ||
+        entry.activationStatus === 'CANCELED_SOURCE_SURVIVED'
+          ? entry.activationStatus
+          : undefined,
     }
   })
   const outcome =
@@ -507,6 +531,19 @@ function readWitchCheckpoint(value: unknown): PersistedWitchCheckpoint | null {
     decision,
     rescuedPlayerIds: readStringArray(value.rescuedPlayerIds),
     poisonEffect,
+    conditionalEffectStates: Array.isArray(value.conditionalEffectStates)
+      ? value.conditionalEffectStates.map((entry) => {
+          if (
+            !isRecord(entry) ||
+            typeof entry.effectId !== 'string' ||
+            (entry.status !== 'ACTIVATED' &&
+              entry.status !== 'CANCELED_SOURCE_SURVIVED')
+          ) {
+            throw new Error('BACKEND_UNAVAILABLE')
+          }
+          return { effectId: entry.effectId, status: entry.status }
+        })
+      : [],
     finalDeaths: value.finalDeaths.map((death) => {
       if (!isRecord(death) || typeof death.playerId !== 'string') {
         throw new Error('BACKEND_UNAVAILABLE')
@@ -533,6 +570,8 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
     kind:
       value.kind === 'WOLF_VOTE'
         ? 'WOLF_VOTE'
+        : value.kind === 'HUNTER_PRELOCK'
+          ? 'HUNTER_PRELOCK'
         : value.kind === 'WITCH_DECISION'
           ? 'WITCH_DECISION'
           : 'SELECT_TARGET',
@@ -551,6 +590,7 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
       value.mode === 'SEER_SELECT' ||
       value.mode === 'SEER_RESULT' ||
       value.mode === 'PROTECTOR_SELECT' ||
+      value.mode === 'HUNTER_PRELOCK' ||
       value.mode === 'WITCH_DECISION'
         ? value.mode
         : 'WOLF_BALLOT',
@@ -954,6 +994,8 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName =
           command.roleId === 'witch'
             ? 'ms1c_open_witch_call'
+            : command.roleId === 'hunter'
+              ? 'ms1d1_open_hunter_call'
             : 'ms1b1_open_night_role_call'
       } else if (command.type === 'CAST_WOLF_VOTE') {
         functionName = 'ms1b1_submit_wolf_ballot'
@@ -969,18 +1011,26 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName = 'ms1b1_acknowledge_seer_result'
       } else if (command.type === 'SUBMIT_PROTECTOR_TARGET') {
         functionName = 'ms1b1_submit_protector_target'
+      } else if (command.type === 'CAST_HUNTER_PRELOCK') {
+        functionName = 'ms1d1_submit_hunter_prelock'
+      } else if (command.type === 'CONFIRM_HUNTER_PRELOCK') {
+        functionName = 'ms1d1_confirm_hunter_prelock'
       } else if (command.type === 'RESOLVE_NIGHT_EFFECTS') {
         functionName = 'ms1b2_resolve_night_effects'
       } else if (command.type === 'SUBMIT_WITCH_DECISION') {
         functionName = 'ms1c_submit_witch_decision'
       } else if (command.type === 'FINALIZE_NIGHT_CHECKPOINT') {
         functionName = 'ms1c_finalize_night_checkpoint'
+      } else if (command.type === 'START_DAY') {
+        functionName = 'ms1d1_start_morning'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }
       const args: Record<string, unknown> = { p_room_id: roomId }
       if (
-        (command.type === 'CALL_NIGHT_ROLE' && command.roleId !== 'witch') ||
+        (command.type === 'CALL_NIGHT_ROLE' &&
+          command.roleId !== 'witch' &&
+          command.roleId !== 'hunter') ||
         command.type === 'COMPLETE_NIGHT_CALL'
       ) {
         args.p_role_id = command.roleId
@@ -992,7 +1042,8 @@ export class SupabaseRoomTransport implements RoomTransport {
       if (
         command.type === 'CAST_WOLF_VOTE' ||
         command.type === 'SUBMIT_SEER_INSPECTION' ||
-        command.type === 'SUBMIT_PROTECTOR_TARGET'
+        command.type === 'SUBMIT_PROTECTOR_TARGET' ||
+        command.type === 'CAST_HUNTER_PRELOCK'
       ) {
         args.p_target_player_id = command.targetId
       }

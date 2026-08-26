@@ -121,6 +121,42 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
+  if (surface === 'hunter-action') {
+    return {
+      ...baseSnapshot,
+      roleIdentity: {
+        roleId: 'hunter',
+        displayName: 'Thợ Săn',
+        factionMeaning: 'Dân Làng',
+        rulesText: 'Khóa trước một mục tiêu; chỉ bắn nếu chết cuối Đêm.',
+        cardAsset: cardAssetUrl('Thợ Săn.jpg'),
+      },
+      nightAction: {
+        id: 'qa-hunter-action',
+        kind: 'HUNTER_PRELOCK',
+        roleId: 'hunter',
+        roleName: 'Thợ Săn',
+        instructions: 'Khóa trước một người hoặc Không ai.',
+        mode: 'HUNTER_PRELOCK',
+        candidates: players.slice(1),
+        hasSelected: false,
+      },
+    }
+  }
+  if (surface === 'day-dead' || surface === 'day-living') {
+    return {
+      ...baseSnapshot,
+      phase: 'DAY',
+      self:
+        surface === 'day-dead'
+          ? { ...players[0], alive: false }
+          : players[0],
+      players:
+        surface === 'day-dead'
+          ? [{ ...players[0], alive: false }, ...players.slice(1)]
+          : players,
+    }
+  }
   if (surface === 'witch-action' || surface === 'witch-poison-action') {
     const resurrectionAvailable = surface === 'witch-action'
     return {

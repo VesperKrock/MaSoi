@@ -8,7 +8,12 @@ export interface RoleDefinition {
   actsAtNight: boolean
   nightOrder: number | null
   firstNightOnly: boolean
-  actionType: 'WOLF_VOTE' | 'SELECT_TARGET' | 'WITCH_DECISION' | 'NONE'
+  actionType:
+    | 'WOLF_VOTE'
+    | 'SELECT_TARGET'
+    | 'HUNTER_PRELOCK'
+    | 'WITCH_DECISION'
+    | 'NONE'
   targetRule: 'LIVING_NON_WOLF' | 'LIVING_OTHER' | 'LIVING_ANY' | 'NONE'
   nightStage: 'PRE_WITCH' | 'FINAL_CHECKPOINT' | null
   description: string
@@ -58,13 +63,29 @@ export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
     description: 'Mỗi đêm chọn một người để bảo vệ.',
     instructions: 'Chọn một người để bảo vệ đêm nay.',
   },
+  hunter: {
+    id: 'hunter',
+    displayName: 'Thợ Săn',
+    team: 'VILLAGE',
+    cardAsset: null,
+    actsAtNight: true,
+    nightOrder: 40,
+    firstNightOnly: false,
+    actionType: 'HUNTER_PRELOCK',
+    targetRule: 'LIVING_OTHER',
+    nightStage: 'PRE_WITCH',
+    description:
+      'Mỗi đêm khóa trước một mục tiêu hoặc Không ai; chỉ bắn nếu chết cuối Đêm.',
+    instructions:
+      'Khóa trước một người hoặc Không ai. Lựa chọn này chưa gây sát thương.',
+  },
   witch: {
     id: 'witch',
     displayName: 'Phù Thủy',
     team: 'VILLAGE',
     cardAsset: null,
     actsAtNight: true,
-    nightOrder: 40,
+    nightOrder: 50,
     firstNightOnly: false,
     actionType: 'WITCH_DECISION',
     targetRule: 'NONE',

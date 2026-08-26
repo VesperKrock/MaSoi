@@ -423,7 +423,7 @@ function WitchFinalizationPanel({ state, dispatch }: ModeratorViewProps) {
 
   if (checkpoint) {
     return (
-      <div className="night-resolution-summary resolved-resolution">
+      <div className="night-resolution-summary resolved-resolution morning-ready">
         <div>
           <p className="eyebrow">Checkpoint cuối Đêm</p>
           {checkpoint.rescuedPlayerIds.map((playerId) => (
@@ -440,8 +440,14 @@ function WitchFinalizationPanel({ state, dispatch }: ModeratorViewProps) {
               </strong>
             ))
           )}
+          <small>Server đã áp dụng · vẫn giữ phase Đêm.</small>
         </div>
-        <small>Server đã áp dụng · vẫn giữ phase Đêm.</small>
+        <button
+          className="button primary"
+          onClick={() => dispatch({ type: 'START_DAY' })}
+        >
+          Công bố buổi sáng
+        </button>
       </div>
     )
   }
@@ -561,6 +567,11 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   <p>Đang chờ hành động riêng trên điện thoại người chơi.</p>
                 </div>
               )}
+              {isActive && action?.kind === 'HUNTER_PRELOCK' && (
+                <div className="action-monitor silent-call">
+                  <p>Đang chờ Thợ Săn khóa trước mục tiêu riêng.</p>
+                </div>
+              )}
               {isActive && action?.kind === 'WITCH_DECISION' && (
                 <div className="action-monitor silent-call">
                   <p>Đang chờ quyết định kết hợp trên điện thoại Phù Thủy.</p>
@@ -577,72 +588,30 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
   )
 }
 
-function DayPanel({ state, dispatch }: ModeratorViewProps) {
-  const vote = state.dayVote
-  const livingCount = state.players.filter((player) => player.alive).length
-  const submittedCount = vote ? Object.keys(vote.votes).length : 0
-
+function DayPanel({ state }: ModeratorViewProps) {
+  const finalDeaths = state.witchCheckpoint?.finalDeaths ?? []
   return (
     <section className="panel day-panel">
       <div className="section-title">
         <div>
-          <p className="eyebrow">Bàn chơi tự thảo luận</p>
-          <h2>Bỏ phiếu treo cổ</h2>
+          <p className="eyebrow">Buổi sáng do Quản trò công bố</p>
+          <h2>Thảo luận ban ngày</h2>
         </div>
       </div>
-      {!vote && (
-        <button
-          className="button primary full"
-          onClick={() => dispatch({ type: 'OPEN_DAY_VOTE' })}
-        >
-          Mở bỏ phiếu
-        </button>
-      )}
-      {vote?.status === 'OPEN' && (
-        <div className="vote-open">
-          <p>
-            Đã có <strong>{submittedCount}/{livingCount}</strong> người gửi lựa chọn.
-            Không có đếm ngược; Quản trò tự đóng phiếu.
-          </p>
-          <button
-            className="button danger full"
-            onClick={() => dispatch({ type: 'CLOSE_DAY_VOTE' })}
-          >
-            Đóng bỏ phiếu
-          </button>
-        </div>
-      )}
-      {vote?.status === 'CLOSED' && vote.result && (
-        <div className="day-result">
-          {vote.result.kind === 'UNIQUE' && (
-            <>
-              <span>Đề xuất treo cổ</span>
-              <strong>{playerName(state, vote.result.targetIds[0])}</strong>
-            </>
-          )}
-          {vote.result.kind === 'TIE' && (
-            <>
-              <span>HÒA PHIẾU — Quản trò quyết định</span>
-              {vote.result.targetIds.map((targetId) => (
-                <strong key={targetId}>
-                  {playerName(state, targetId)}: {vote.result?.counts[targetId]}
-                </strong>
-              ))}
-            </>
-          )}
-          {vote.result.kind === 'NO_VOTES' && (
-            <strong>Không có phiếu hợp lệ — Quản trò quyết định</strong>
-          )}
-        </div>
-      )}
-      <div className="button-row">
-        <button
-          className="button secondary"
-          disabled={vote?.status === 'OPEN'}
-          onClick={() => dispatch({ type: 'START_NIGHT' })}
-        >
-          Bắt đầu Đêm {state.dayNumber + 1}
-        </button>
+      <div className="morning-summary">
+        <span>Kết quả Đêm để Quản trò tự công bố</span>
+        {finalDeaths.length === 0 ? (
+          <strong>Không có người chết trong Đêm.</strong>
+        ) : (
+          finalDeaths.map((death) => (
+            <strong key={death.playerId}>{playerName(state, death.playerId)}</strong>
+          ))
+        )}
+        <small>Không công khai vai trò · không tự mở bỏ phiếu.</small>
+      </div>
+      <div className="day-discussion-note">
+        <strong>Bỏ phiếu ban ngày chưa được mở trong MS-1D1.</strong>
+        <span>Hãy điều phối phần thảo luận trực tiếp tại bàn.</span>
       </div>
     </section>
   )

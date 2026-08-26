@@ -23,7 +23,10 @@
     "qa:resolution-local": "node scripts/night-resolution-supabase-qa.mjs --local",
     "qa:resolution-remote": "node scripts/night-resolution-supabase-qa.mjs --remote",
     "qa:witch-local": "node scripts/witch-checkpoint-supabase-qa.mjs --local",
-    "qa:witch-remote": "node scripts/witch-checkpoint-supabase-qa.mjs --remote"
+    "qa:witch-remote": "node scripts/witch-checkpoint-supabase-qa.mjs --remote",
+    "qa:d1-touch": "node scripts/zero-scroll-qa.mjs hunter-action day-dead day-living",
+    "qa:hunter-local": "node scripts/hunter-morning-supabase-qa.mjs --local",
+    "qa:hunter-remote": "node scripts/hunter-morning-supabase-qa.mjs --remote"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

@@ -74,7 +74,10 @@ function NeutralScreen({
   const waitingForStart = snapshot.lifecycle === 'ROLE_REVEAL'
   const copy = !snapshot.self.alive
     ? {
-        eyebrow: `ĐÊM ${snapshot.dayNumber}`,
+        eyebrow:
+          snapshot.phase === 'DAY'
+            ? `NGÀY ${snapshot.dayNumber}`
+            : `ĐÊM ${snapshot.dayNumber}`,
         title: 'Bạn đã chết.',
         body: 'Hãy úp điện thoại xuống và tiếp tục theo dõi bàn chơi.',
       }
@@ -268,6 +271,53 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
         snapshot={snapshot}
         dispatch={dispatch}
       />
+    )
+  }
+  if (action.mode === 'HUNTER_PRELOCK') {
+    const choose = (targetId: string | null) =>
+      void dispatch({
+        type: 'CAST_HUNTER_PRELOCK',
+        playerId: snapshot.self.id,
+        targetId,
+      })
+    return (
+      <section className="player-action compact-action hunter-prelock-action">
+        <header>
+          <p className="eyebrow">KHÓA TRƯỚC · CHƯA BẮN</p>
+          <h1>Chọn mục tiêu dự phòng</h1>
+          <p>{action.instructions}</p>
+        </header>
+        <div className="target-list">
+          {action.candidates.map((candidate) => (
+            <TargetButton
+              key={candidate.id}
+              seat={candidate.seat}
+              name={candidate.alias}
+              selected={action.currentTargetId === candidate.id}
+              onClick={() => choose(candidate.id)}
+            />
+          ))}
+          <TargetButton
+            seat="—"
+            name="Không ai"
+            selected={action.hasSelected && action.currentTargetId === null}
+            onClick={() => choose(null)}
+          />
+        </div>
+        <button
+          className="button primary full action-confirm"
+          disabled={!action.hasSelected}
+          onClick={() =>
+            void dispatch({
+              type: 'CONFIRM_HUNTER_PRELOCK',
+              playerId: snapshot.self.id,
+            })
+          }
+          data-required-control
+        >
+          Khóa lựa chọn · Úp máy
+        </button>
+      </section>
     )
   }
   const choose = (targetId: string | null) => {

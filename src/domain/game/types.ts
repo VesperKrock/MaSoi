@@ -66,7 +66,7 @@ export interface FinalTargetResult {
 export interface NightAction {
   id: string
   roleId: RoleId
-  kind: 'WOLF_VOTE' | 'SELECT_TARGET' | 'WITCH_DECISION'
+  kind: 'WOLF_VOTE' | 'SELECT_TARGET' | 'HUNTER_PRELOCK' | 'WITCH_DECISION'
   status: 'OPEN' | 'COMPLETED' | 'CLOSED_BY_MODERATOR'
   eligibleActorIds: PlayerId[]
   eligibleTargetIds: PlayerId[]
@@ -136,11 +136,17 @@ export type JournalEventType =
   | 'WOLF_ATTACK_BLOCKED'
   | 'NIGHT_DEATH_CANDIDATE_CREATED'
   | 'NIGHT_RESOLUTION_COMPLETED'
+  | 'HUNTER_TARGET_LOCKED'
+  | 'HUNTER_SHOT_CREATED'
+  | 'HUNTER_SHOT_ACTIVATED'
+  | 'HUNTER_SHOT_CANCELED'
+  | 'HUNTER_SHOT_VICTIM_RESCUED'
   | 'WITCH_DECISION_SUBMITTED'
   | 'WITCH_RESURRECTION_USED'
   | 'WITCH_POISON_USED'
   | 'WITCH_CHECKPOINT_COMPLETED'
   | 'NIGHT_DEATH_FINALIZED'
+  | 'MORNING_STARTED'
   | 'DAY_VOTE_OPENED'
   | 'DAY_VOTE_CHANGED'
   | 'DAY_VOTE_CLOSED'
@@ -207,6 +213,12 @@ export type RoomCommand =
   | { type: 'SUBMIT_SEER_INSPECTION'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'ACKNOWLEDGE_SEER_RESULT'; playerId: PlayerId }
   | { type: 'SUBMIT_PROTECTOR_TARGET'; playerId: PlayerId; targetId: PlayerId }
+  | {
+      type: 'CAST_HUNTER_PRELOCK'
+      playerId: PlayerId
+      targetId: PlayerId | null
+    }
+  | { type: 'CONFIRM_HUNTER_PRELOCK'; playerId: PlayerId }
   | { type: 'RESOLVE_WOLF_VOTE'; atDeadline?: boolean }
   | { type: 'COMPLETE_NIGHT_CALL'; roleId: RoleId }
   | { type: 'RESOLVE_NIGHT_EFFECTS' }

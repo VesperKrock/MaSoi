@@ -40,7 +40,7 @@ const viewports = [
   { width: 390, height: 844 },
   { width: 430, height: 932 },
 ]
-const surfaces = [
+const defaultSurfaces = [
   'landing',
   'join',
   'name-modal',
@@ -51,11 +51,16 @@ const surfaces = [
   'seer-select',
   'seer-result',
   'protector-action',
+  'hunter-action',
   'witch-action',
   'witch-poison-action',
   'vote',
+  'day-dead',
+  'day-living',
   'role-recheck',
 ]
+const requestedSurfaces = process.argv.slice(2)
+const surfaces = requestedSurfaces.length > 0 ? requestedSurfaces : defaultSurfaces
 const results = []
 
 async function openSurface(page, surface) {
@@ -205,7 +210,7 @@ try {
     }
   }
 
-  const moderatorViewports = [
+  const moderatorViewports = requestedSurfaces.length > 0 ? [] : [
     { name: 'portrait-mobile', width: 390, height: 844 },
     { name: 'landscape-mobile', width: 844, height: 390 },
     { name: 'desktop', width: 1440, height: 900 },

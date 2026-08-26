@@ -52,6 +52,9 @@ export const roomTransportErrorCodes = {
   witchPoisonUnavailable: 'WITCH_POISON_UNAVAILABLE',
   witchPoisonForbiddenNightOne: 'WITCH_POISON_FORBIDDEN_NIGHT_ONE',
   witchPoisonSelfTarget: 'WITCH_POISON_SELF_TARGET',
+  hunterPrelockRequired: 'HUNTER_PRELOCK_REQUIRED',
+  hunterPrelockAlreadyConfirmed: 'HUNTER_PRELOCK_ALREADY_CONFIRMED',
+  morningNotReady: 'MORNING_NOT_READY',
 } as const
 
 export type RoomTransportErrorCode =

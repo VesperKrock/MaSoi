@@ -563,6 +563,23 @@ select {
   letter-spacing: 0.08em;
 }
 
+.morning-summary,
+.day-discussion-note {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--amber-dark);
+  border-radius: 10px;
+  background: #211b12;
+}
+
+.morning-summary span,
+.morning-summary small,
+.day-discussion-note span {
+  color: var(--muted);
+}
+
 .journal-panel {
   margin-top: 20px;
 }

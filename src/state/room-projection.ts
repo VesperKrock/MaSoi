@@ -38,6 +38,7 @@ export interface PlayerActionSnapshot {
     | 'SEER_SELECT'
     | 'SEER_RESULT'
     | 'PROTECTOR_SELECT'
+    | 'HUNTER_PRELOCK'
     | 'WITCH_DECISION'
   resurrectionCandidates?: Player[]
   poisonCandidates?: Player[]
@@ -105,9 +106,11 @@ function projectNightAction(
   const targetIds =
     action.kind === 'WITCH_DECISION'
       ? action.eligibleTargetIds
-      : action.kind === 'SELECT_TARGET'
-      ? getEligibleRoleTargets(state, action.roleId, player.id)
-      : action.eligibleTargetIds
+      : action.kind === 'HUNTER_PRELOCK'
+        ? action.eligibleTargetIds
+        : action.kind === 'SELECT_TARGET'
+          ? getEligibleRoleTargets(state, action.roleId, player.id)
+          : action.eligibleTargetIds
   const hasSelected = Object.prototype.hasOwnProperty.call(
     action.selections,
     player.id,
@@ -136,11 +139,13 @@ function projectNightAction(
           ? action.seer
             ? 'SEER_RESULT'
             : 'SEER_SELECT'
-        : action.roleId === 'protector'
+          : action.roleId === 'protector'
             ? 'PROTECTOR_SELECT'
-            : action.roleId === 'witch'
-              ? 'WITCH_DECISION'
-              : undefined,
+            : action.roleId === 'hunter'
+              ? 'HUNTER_PRELOCK'
+              : action.roleId === 'witch'
+                ? 'WITCH_DECISION'
+                : undefined,
     resurrectionCandidates: action.witch?.resurrectionCandidateIds.map(
       (targetId) => playerById(state, targetId),
     ),

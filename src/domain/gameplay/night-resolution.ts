@@ -6,6 +6,16 @@ export type NightEffectCategory =
 
 export type NightEffectOutcome = 'BLOCKED_BY_PROTECTOR' | 'UNBLOCKED'
 
+export interface NightEffectActivationCondition {
+  kind: 'SOURCE_PLAYER_FINAL_NIGHT_DEATH'
+  sourcePlayerId: string
+}
+
+export type NightEffectActivationStatus =
+  | 'CONDITIONAL'
+  | 'ACTIVATED'
+  | 'CANCELED_SOURCE_SURVIVED'
+
 export interface NightEffectInput {
   id: string
   sourceType: string
@@ -14,10 +24,12 @@ export interface NightEffectInput {
   targetPlayerId: string
   lethal: boolean
   protectorBlockable: boolean
+  activationCondition?: NightEffectActivationCondition
 }
 
 export interface ResolvedNightEffect extends NightEffectInput {
   outcome: NightEffectOutcome
+  activationStatus?: NightEffectActivationStatus
   blockSourceType?: 'PROTECTOR_SHIELD'
   blockSourceRoleId?: 'protector'
 }
@@ -50,6 +62,7 @@ export interface NightResolutionReadiness {
 const resolutionContributors: readonly RoleId[] = [
   'werewolf',
   'protector',
+  'hunter',
 ]
 
 export function createWolfAttackEffect(
@@ -97,10 +110,19 @@ export function resolveNightEffects(
       ? {
           ...effect,
           outcome: 'BLOCKED_BY_PROTECTOR',
+          activationStatus: effect.activationCondition
+            ? 'CONDITIONAL'
+            : undefined,
           blockSourceType: 'PROTECTOR_SHIELD',
           blockSourceRoleId: 'protector',
         }
-      : { ...effect, outcome: 'UNBLOCKED' }
+      : {
+          ...effect,
+          outcome: 'UNBLOCKED',
+          activationStatus: effect.activationCondition
+            ? 'CONDITIONAL'
+            : undefined,
+        }
   })
 
   const provisionalDeathCandidateIds = [

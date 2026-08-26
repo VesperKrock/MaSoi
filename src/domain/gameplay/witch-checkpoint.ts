@@ -1,5 +1,6 @@
 import type { PlayerId } from '../game/types'
 import type {
+  NightEffectActivationStatus,
   ResolvedNightEffect,
   NightEffectInput,
 } from './night-resolution'
@@ -39,6 +40,10 @@ export interface WitchCheckpointResult {
   rescuedPlayerIds: PlayerId[]
   poisonEffect: ResolvedNightEffect | null
   finalDeaths: FinalNightDeath[]
+  conditionalEffectStates: Array<{
+    effectId: string
+    status: Exclude<NightEffectActivationStatus, 'CONDITIONAL'>
+  }>
   resourcesAfter: WitchResources | null
 }
 
@@ -206,9 +211,40 @@ export function finalizeWitchCheckpoint(
   const poisonEffect: ResolvedNightEffect | null = poisonEffectInput
     ? { ...poisonEffectInput, outcome: 'UNBLOCKED' }
     : null
+  const unconditionalEffects = input.preWitchEffects.filter(
+    (effect) =>
+      !effect.activationCondition &&
+      effect.lethal &&
+      effect.outcome === 'UNBLOCKED' &&
+      effect.targetPlayerId !== decision.resurrectionTargetId,
+  )
+  const sourceFinalDeathIds = new Set(
+    [...unconditionalEffects, ...(poisonEffect ? [poisonEffect] : [])].map(
+      (effect) => effect.targetPlayerId,
+    ),
+  )
+  const conditionalEffects = input.preWitchEffects.filter(
+    (effect) => effect.activationCondition,
+  )
+  const conditionalEffectStates = conditionalEffects.map((effect) => ({
+    effectId: effect.id,
+    status:
+      !sourceFinalDeathIds.has(
+        effect.activationCondition?.sourcePlayerId ?? '',
+      )
+        ? ('CANCELED_SOURCE_SURVIVED' as const)
+        : ('ACTIVATED' as const),
+  }))
+  const activeConditionalEffectIds = new Set(
+    conditionalEffectStates
+      .filter((entry) => entry.status === 'ACTIVATED')
+      .map((entry) => entry.effectId),
+  )
   const effectiveEffects = [
-    ...input.preWitchEffects.filter(
+    ...unconditionalEffects,
+    ...conditionalEffects.filter(
       (effect) =>
+        activeConditionalEffectIds.has(effect.id) &&
         effect.lethal &&
         effect.outcome === 'UNBLOCKED' &&
         effect.targetPlayerId !== decision.resurrectionTargetId,
@@ -230,6 +266,7 @@ export function finalizeWitchCheckpoint(
         ? []
         : [decision.resurrectionTargetId],
     poisonEffect,
+    conditionalEffectStates,
     finalDeaths: [...sourceIdsByPlayer].map(
       ([playerId, sourceEffectIds]) => ({ playerId, sourceEffectIds }),
     ),

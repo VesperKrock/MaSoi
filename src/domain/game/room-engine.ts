@@ -17,8 +17,8 @@ import { detectForSeer } from '../gameplay/night-rules'
 import {
   createWolfAttackEffect,
   getNightResolutionReadiness,
-  resolveNightEffects,
 } from '../gameplay/night-resolution'
+import { resolveNightEffectsWithHunter } from '../gameplay/hunter-night'
 import {
   finalizeWitchCheckpoint,
   getWitchCapabilities,
@@ -667,6 +667,71 @@ function confirmNightAction(
   }
 }
 
+function castHunterPrelock(
+  state: RoomState,
+  playerId: PlayerId,
+  targetId: PlayerId | null,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.kind !== 'HUNTER_PRELOCK' || action.roleId !== 'hunter') {
+    fail('Đây không phải lượt khóa mục tiêu của Thợ Săn.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Thợ Săn còn sống mới được khóa mục tiêu.')
+  }
+  if (action.confirmedActorIds.includes(playerId)) {
+    fail('Mục tiêu Thợ Săn đã được xác nhận.')
+  }
+  if (targetId !== null && !action.eligibleTargetIds.includes(targetId)) {
+    fail('Mục tiêu Thợ Săn phải còn sống, cùng phòng và không phải chính mình.')
+  }
+
+  action.selections[playerId] = targetId
+  appendEvent(state, environment, 'ROLE_ACTION_SUBMITTED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'hunter',
+    targetPlayerId: targetId ?? undefined,
+    metadata: {
+      actionId: action.id,
+      prelockOnly: true,
+      nobody: targetId === null,
+      confirmed: false,
+    },
+  })
+}
+
+function confirmHunterPrelock(
+  state: RoomState,
+  playerId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.kind !== 'HUNTER_PRELOCK' || action.roleId !== 'hunter') {
+    fail('Đây không phải lượt xác nhận của Thợ Săn.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Thợ Săn còn sống mới được xác nhận mục tiêu.')
+  }
+  if (!Object.prototype.hasOwnProperty.call(action.selections, playerId)) {
+    fail('Hãy chọn một người hoặc Không ai trước khi xác nhận.')
+  }
+  if (action.confirmedActorIds.includes(playerId)) return
+
+  action.confirmedActorIds.push(playerId)
+  action.status = 'COMPLETED'
+  action.completedAt = environment.now()
+  const targetId = action.selections[playerId]
+  appendEvent(state, environment, 'HUNTER_TARGET_LOCKED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'hunter',
+    targetPlayerId: targetId ?? undefined,
+    resolution: targetId === null ? 'NOBODY' : 'TARGET_LOCKED',
+    metadata: { prelockOnly: true },
+  })
+  finishCall(state, 'hunter', environment)
+}
+
 function submitTargetAction(
   state: RoomState,
   playerId: PlayerId,
@@ -927,6 +992,9 @@ function completeNightCall(
   if (roleId === 'witch' && action?.status === 'OPEN') {
     fail('Phù Thủy còn sống phải xác nhận quyết định kết hợp trên thiết bị riêng.')
   }
+  if (roleId === 'hunter' && action?.status === 'OPEN') {
+    fail('Thợ Săn còn sống phải khóa và xác nhận mục tiêu trên thiết bị riêng.')
+  }
   if (action?.kind === 'WOLF_VOTE' && action.status === 'OPEN') {
     fail('Hãy phân giải phiếu Ma Sói trước khi đóng lượt gọi.')
   }
@@ -1025,7 +1093,28 @@ function resolveNightConsequences(
   const effects = wolfTargetId
     ? [createWolfAttackEffect(environment.nextId(), wolfTargetId)]
     : []
-  const result = resolveNightEffects(effects, protectorTargetId)
+  const hunterAction = state.night.actionsByRole.hunter
+  const hunterPlayerId = hunterAction?.eligibleActorIds[0]
+  const hunterHasSelection =
+    hunterPlayerId !== undefined &&
+    Object.prototype.hasOwnProperty.call(
+      hunterAction?.selections ?? {},
+      hunterPlayerId,
+    )
+  const hunterTargetId = hunterHasSelection
+    ? hunterAction?.selections[hunterPlayerId]
+    : undefined
+  const result = resolveNightEffectsWithHunter(
+    effects,
+    protectorTargetId,
+    hunterPlayerId && hunterHasSelection
+      ? {
+          hunterPlayerId,
+          targetPlayerId: hunterTargetId ?? null,
+        }
+      : null,
+    hunterTargetId ? environment.nextId() : undefined,
+  )
   const resolvedAt = environment.now()
 
   state.nightResolution = {
@@ -1036,18 +1125,26 @@ function resolveNightConsequences(
   }
 
   for (const effect of result.effects) {
-    appendEvent(state, environment, 'WOLF_ATTACK_CREATED', {
-      actorRoleId: 'werewolf',
-      targetPlayerId: effect.targetPlayerId,
-      resolution: effect.outcome,
-      metadata: {
-        effectId: effect.id,
-        sourceType: effect.sourceType,
-        category: effect.category,
-        lethal: effect.lethal,
-        protectorBlockable: effect.protectorBlockable,
+    appendEvent(
+      state,
+      environment,
+      effect.sourceType === 'HUNTER_SHOT'
+        ? 'HUNTER_SHOT_CREATED'
+        : 'WOLF_ATTACK_CREATED',
+      {
+        actorRoleId: effect.sourceRoleId,
+        targetPlayerId: effect.targetPlayerId,
+        resolution: effect.outcome,
+        metadata: {
+          effectId: effect.id,
+          sourceType: effect.sourceType,
+          category: effect.category,
+          lethal: effect.lethal,
+          protectorBlockable: effect.protectorBlockable,
+          activationCondition: effect.activationCondition,
+        },
       },
-    })
+    )
     if (effect.outcome === 'BLOCKED_BY_PROTECTOR') {
       appendEvent(state, environment, 'WOLF_ATTACK_BLOCKED', {
         actorRoleId: 'werewolf',
@@ -1064,7 +1161,9 @@ function resolveNightConsequences(
 
   for (const playerId of result.provisionalDeathCandidateIds) {
     appendEvent(state, environment, 'NIGHT_DEATH_CANDIDATE_CREATED', {
-      actorRoleId: 'werewolf',
+      actorRoleId: result.effects.find(
+        (effect) => effect.targetPlayerId === playerId,
+      )?.sourceRoleId,
       targetPlayerId: playerId,
       resolution: 'PROVISIONAL_PRE_WITCH',
       metadata: {
@@ -1139,6 +1238,40 @@ function finalizeNightCheckpoint(
     ...result,
   }
 
+  for (const activation of result.conditionalEffectStates) {
+    const effect = state.nightResolution.effects.find(
+      (entry) => entry.id === activation.effectId,
+    )
+    if (effect) effect.activationStatus = activation.status
+    appendEvent(
+      state,
+      environment,
+      activation.status === 'ACTIVATED'
+        ? 'HUNTER_SHOT_ACTIVATED'
+        : 'HUNTER_SHOT_CANCELED',
+      {
+        actorRoleId: 'hunter',
+        targetPlayerId: effect?.targetPlayerId,
+        resolution: activation.status,
+        metadata: { effectId: activation.effectId },
+      },
+    )
+    if (
+      activation.status === 'ACTIVATED' &&
+      effect &&
+      decision?.resurrectionTargetId !== null &&
+      decision?.resurrectionTargetId !== undefined &&
+      effect.targetPlayerId === decision.resurrectionTargetId
+    ) {
+      appendEvent(state, environment, 'HUNTER_SHOT_VICTIM_RESCUED', {
+        actorRoleId: 'hunter',
+        targetPlayerId: effect.targetPlayerId,
+        resolution: 'CURRENT_NIGHT_RESCUE',
+        metadata: { effectId: activation.effectId },
+      })
+    }
+  }
+
   for (const playerId of result.rescuedPlayerIds) {
     appendEvent(state, environment, 'WITCH_RESURRECTION_USED', {
       actorRoleId: 'witch',
@@ -1183,6 +1316,7 @@ function finalizeNightCheckpoint(
 }
 
 function startDay(state: RoomState, environment: GameEnvironment): void {
+  if (state.phase === 'DAY') return
   if (state.phase !== 'NIGHT' || !state.night) {
     fail('Chỉ chuyển sang ngày từ phase đêm.')
   }
@@ -1193,6 +1327,15 @@ function startDay(state: RoomState, environment: GameEnvironment): void {
     fail('Phải hoàn tất checkpoint tử vong Đêm trước khi chuyển phase.')
   }
   state.phase = 'DAY'
+  state.dayVote = null
+  appendEvent(state, environment, 'MORNING_STARTED', {
+    resolution: 'DAY_DISCUSSION',
+    metadata: {
+      finalDeathPlayerIds:
+        state.witchCheckpoint?.finalDeaths.map((death) => death.playerId) ?? [],
+      voteOpened: false,
+    },
+  })
   appendEvent(state, environment, 'PHASE_CHANGED', {
     resolution: 'DAY',
     metadata: { from: 'NIGHT', to: 'DAY' },
@@ -1380,6 +1523,17 @@ export function applyRoomCommand(
         command.targetId,
         environment,
       )
+      break
+    case 'CAST_HUNTER_PRELOCK':
+      castHunterPrelock(
+        state,
+        command.playerId,
+        command.targetId,
+        environment,
+      )
+      break
+    case 'CONFIRM_HUNTER_PRELOCK':
+      confirmHunterPrelock(state, command.playerId, environment)
       break
     case 'SUBMIT_WITCH_DECISION':
       submitWitchDecision(
