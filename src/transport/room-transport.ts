@@ -55,6 +55,14 @@ export const roomTransportErrorCodes = {
   hunterPrelockRequired: 'HUNTER_PRELOCK_REQUIRED',
   hunterPrelockAlreadyConfirmed: 'HUNTER_PRELOCK_ALREADY_CONFIRMED',
   morningNotReady: 'MORNING_NOT_READY',
+  notDay: 'NOT_DAY',
+  dayVoteAlreadyExists: 'DAY_VOTE_ALREADY_EXISTS',
+  dayVoteNotOpen: 'DAY_VOTE_NOT_OPEN',
+  dayVoteNotReady: 'DAY_VOTE_NOT_READY',
+  dayVoteExpired: 'DAY_VOTE_EXPIRED',
+  hunterRevengeNotPending: 'HUNTER_REVENGE_NOT_PENDING',
+  hunterRevengeAlreadyResolved: 'HUNTER_REVENGE_ALREADY_RESOLVED',
+  dayConsequenceNotReady: 'DAY_CONSEQUENCE_NOT_READY',
 } as const
 
 export type RoomTransportErrorCode =

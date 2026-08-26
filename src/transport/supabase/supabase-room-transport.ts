@@ -13,6 +13,8 @@ import {
   type RoomSetupInput,
 } from '../../domain/game/room-setup'
 import type {
+  DayEffect,
+  DayVoteState,
   JournalEvent,
   NightAction,
   NightCall,
@@ -149,6 +151,14 @@ Object.assign(serverMessages, {
     'Lựa chọn Thợ Săn của Đêm này đã được khóa.',
   MORNING_NOT_READY:
     'Chỉ có thể công bố buổi sáng sau khi tử vong Đêm đã được chốt ổn định.',
+  NOT_DAY: 'Thao tác này chỉ hợp lệ trong phase Ngày.',
+  DAY_VOTE_ALREADY_EXISTS: 'Lượt bỏ phiếu của Ngày hiện tại đã được mở hoặc hoàn tất.',
+  DAY_VOTE_NOT_OPEN: 'Quản trò chưa mở lượt bỏ phiếu ban ngày.',
+  DAY_VOTE_NOT_READY: 'Chưa hết đúng 30 giây bỏ phiếu; không thể chốt sớm.',
+  DAY_VOTE_EXPIRED: 'Thời hạn bỏ phiếu ban ngày đã kết thúc.',
+  HUNTER_REVENGE_NOT_PENDING: 'Chỉ Thợ Săn vừa bị treo cổ mới có phát bắn trả thù.',
+  HUNTER_REVENGE_ALREADY_RESOLVED: 'Phát bắn trả thù đã được giải quyết.',
+  DAY_CONSEQUENCE_NOT_READY: 'Phải hoàn tất kết quả treo cổ và phát bắn Thợ Săn trước khi bắt đầu Đêm tiếp theo.',
 })
 
 const machineCodes = new Set(Object.keys(serverMessages))
@@ -615,6 +625,170 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
   }
 }
 
+function readDayEffect(value: unknown): DayEffect | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.targetPlayerId !== 'string' ||
+    (value.sourceType !== 'DAY_HANGING' &&
+      value.sourceType !== 'HUNTER_REVENGE_SHOT')
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    sourceType: value.sourceType,
+    sourceRoleId:
+      value.sourceType === 'HUNTER_REVENGE_SHOT' ? 'hunter' : undefined,
+    actorPlayerId:
+      typeof value.actorPlayerId === 'string' ? value.actorPlayerId : undefined,
+    category:
+      value.sourceType === 'DAY_HANGING'
+        ? 'DAY_LETHAL_EFFECT'
+        : 'NON_VILLAIN_LETHAL_EFFECT',
+    targetPlayerId: value.targetPlayerId,
+    lethal: true,
+    protectorBlockable: false,
+    finalized: true,
+  }
+}
+
+function readModeratorDayVote(value: unknown): DayVoteState | null {
+  if (value === null || value === undefined) return null
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    (value.status !== 'OPEN' && value.status !== 'RESOLVED')
+  ) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const totals = isRecord(value.totals)
+    ? Object.fromEntries(
+        Object.entries(value.totals).map(([playerId, count]) => [
+          playerId,
+          Number(count),
+        ]),
+      )
+    : {}
+  const resultValue = isRecord(value.result) ? value.result : undefined
+  const hangedPlayerId =
+    resultValue && typeof resultValue.hangedPlayerId === 'string'
+      ? resultValue.hangedPlayerId
+      : undefined
+  const kind =
+    resultValue?.kind === 'UNIQUE'
+      ? ('UNIQUE' as const)
+      : resultValue?.kind === 'TIE'
+        ? ('TIE' as const)
+        : ('NO_VOTES' as const)
+  const revengeValue = isRecord(value.hunterRevenge)
+    ? value.hunterRevenge
+    : undefined
+  return {
+    status: value.status === 'OPEN' ? 'OPEN' : 'CLOSED',
+    votes: {},
+    openedAt: parseTimestamp(value.openedAt),
+    deadlineAt: parseTimestamp(value.deadlineAt),
+    closedAt:
+      typeof value.resolvedAt === 'string'
+        ? parseTimestamp(value.resolvedAt)
+        : undefined,
+    totals,
+    result:
+      value.status === 'RESOLVED'
+        ? {
+            kind,
+            targetIds: hangedPlayerId ? [hangedPlayerId] : [],
+            counts: totals,
+          }
+        : undefined,
+    hangingEffect: readDayEffect(value.hangingEffect),
+    hunterRevenge:
+      revengeValue && typeof revengeValue.hunterPlayerId === 'string'
+        ? {
+            hunterPlayerId: revengeValue.hunterPlayerId,
+            status:
+              revengeValue.status === 'RESOLVED' ? 'RESOLVED' : 'PENDING',
+            targetPlayerId:
+              revengeValue.status === 'RESOLVED'
+                ? typeof revengeValue.targetPlayerId === 'string'
+                  ? revengeValue.targetPlayerId
+                  : null
+                : undefined,
+            resolvedAt:
+              typeof revengeValue.resolvedAt === 'string'
+                ? parseTimestamp(revengeValue.resolvedAt)
+                : undefined,
+            effect: readDayEffect(revengeValue.effect),
+          }
+        : undefined,
+  }
+}
+
+function readPlayerDayVote(value: unknown): PlayerRoomSnapshot['dayVote'] {
+  if (value === null || value === undefined) return undefined
+  if (
+    !isRecord(value) ||
+    (value.status !== 'OPEN' && value.status !== 'RESOLVED')
+  ) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const totals = isRecord(value.totals)
+    ? Object.fromEntries(
+        Object.entries(value.totals).map(([playerId, count]) => [
+          playerId,
+          Number(count),
+        ]),
+      )
+    : {}
+  const resultValue = isRecord(value.result) ? value.result : undefined
+  const revengeAction = isRecord(value.hunterRevengeAction)
+    ? value.hunterRevengeAction
+    : undefined
+  return {
+    status: value.status === 'OPEN' ? 'OPEN' : 'CLOSED',
+    candidates: Array.isArray(value.candidates)
+      ? value.candidates.map(readRemotePlayer)
+      : [],
+    currentTargetId:
+      typeof value.currentTargetId === 'string' ? value.currentTargetId : null,
+    openedAt: parseTimestamp(value.openedAt),
+    deadlineAt: parseTimestamp(value.deadlineAt),
+    totals,
+    result: resultValue
+      ? {
+          kind:
+            resultValue.kind === 'UNIQUE'
+              ? 'UNIQUE'
+              : resultValue.kind === 'TIE'
+                ? 'TIE'
+                : 'NO_VOTES',
+          hangedPlayer: isRecord(resultValue.hangedPlayer)
+            ? readRemotePlayer(resultValue.hangedPlayer)
+            : undefined,
+          hunterRevealed: resultValue.hunterRevealed === true,
+          hunterRevengeStatus:
+            resultValue.hunterRevengeStatus === 'PENDING' ||
+            resultValue.hunterRevengeStatus === 'RESOLVED'
+              ? resultValue.hunterRevengeStatus
+              : undefined,
+          hunterRevengeTarget: isRecord(resultValue.hunterRevengeTarget)
+            ? readRemotePlayer(resultValue.hunterRevengeTarget)
+            : resultValue.hunterRevengeStatus === 'RESOLVED'
+              ? null
+              : undefined,
+        }
+      : undefined,
+    hunterRevengeAction: revengeAction
+      ? {
+          candidates: Array.isArray(revengeAction.candidates)
+            ? revengeAction.candidates.map(readRemotePlayer)
+            : [],
+        }
+      : undefined,
+  }
+}
+
 function lifecycleJournal(payload: RemoteModeratorPayload): JournalEvent[] {
   const events: JournalEvent[] = [
     {
@@ -738,7 +912,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
     nightResolution: readNightResolution(value.nightResolution),
     witchResources: witchCheckpoint?.resourcesAfter ?? null,
     witchCheckpoint,
-    dayVote: null,
+    dayVote: readModeratorDayVote(value.dayVote),
     journal: [
       ...lifecycleJournal(payload),
       ...(value.night ? readRemoteNight(value.night).events : []),
@@ -787,6 +961,7 @@ export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
     roleRevealPending:
       room.status === 'ROLE_REVEAL' && Boolean(role) && !selfRemote.revealConfirmed,
     nightAction: readPlayerNightAction(value.nightAction),
+    dayVote: readPlayerDayVote(value.dayVote),
   }
 }
 
@@ -1023,6 +1198,16 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName = 'ms1c_finalize_night_checkpoint'
       } else if (command.type === 'START_DAY') {
         functionName = 'ms1d1_start_morning'
+      } else if (command.type === 'OPEN_DAY_VOTE') {
+        functionName = 'ms1d2_start_day_vote'
+      } else if (command.type === 'CAST_DAY_VOTE') {
+        functionName = 'ms1d2_cast_day_vote'
+      } else if (command.type === 'CLOSE_DAY_VOTE') {
+        functionName = 'ms1d2_resolve_day_vote'
+      } else if (command.type === 'SUBMIT_HUNTER_REVENGE') {
+        functionName = 'ms1d2_submit_hunter_revenge'
+      } else if (command.type === 'START_NEXT_NIGHT') {
+        functionName = 'ms1d2_start_next_night'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }
@@ -1043,7 +1228,9 @@ export class SupabaseRoomTransport implements RoomTransport {
         command.type === 'CAST_WOLF_VOTE' ||
         command.type === 'SUBMIT_SEER_INSPECTION' ||
         command.type === 'SUBMIT_PROTECTOR_TARGET' ||
-        command.type === 'CAST_HUNTER_PRELOCK'
+        command.type === 'CAST_HUNTER_PRELOCK' ||
+        command.type === 'CAST_DAY_VOTE' ||
+        command.type === 'SUBMIT_HUNTER_REVENGE'
       ) {
         args.p_target_player_id = command.targetId
       }

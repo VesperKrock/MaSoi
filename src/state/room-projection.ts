@@ -1,4 +1,9 @@
-import { getEligibleDayTargets, getEligibleRoleTargets } from '../domain/actions/target-rules'
+import {
+  getEligibleDayTargets,
+  getEligibleRoleTargets,
+  getRoleIdForPlayer,
+} from '../domain/actions/target-rules'
+import { getDayVoteWeight, resolveDayVote } from '../domain/voting/day-vote'
 import type {
   NightAction,
   Player,
@@ -73,6 +78,19 @@ export interface PlayerRoomSnapshot {
     status: 'OPEN' | 'CLOSED'
     candidates: Player[]
     currentTargetId?: PlayerId | null
+    openedAt: number
+    deadlineAt: number
+    totals: Record<PlayerId, number>
+    result?: {
+      kind: 'UNIQUE' | 'TIE' | 'NO_VOTES'
+      hangedPlayer?: Player
+      hunterRevealed: boolean
+      hunterRevengeStatus?: 'PENDING' | 'RESOLVED'
+      hunterRevengeTarget?: Player | null
+    }
+    hunterRevengeAction?: {
+      candidates: Player[]
+    }
   }
 }
 
@@ -197,6 +215,29 @@ export function projectRoomSnapshot(
     state.lifecycle === 'ROLE_REVEAL' &&
     Boolean(catalogRole) &&
     !state.roleRevealConfirmedPlayerIds.includes(self.id)
+  const dayVote = state.phase === 'DAY' ? state.dayVote : null
+  const livingIds = state.players
+    .filter((player) => player.alive)
+    .map((player) => player.id)
+  const liveDayResult = dayVote
+    ? dayVote.result ??
+      resolveDayVote(
+        dayVote.votes,
+        livingIds,
+        livingIds,
+        Object.fromEntries(
+          livingIds.map((playerId) => [
+            playerId,
+            getDayVoteWeight(getRoleIdForPlayer(state, playerId)),
+          ]),
+        ),
+      )
+    : undefined
+  const hangedPlayerId =
+    dayVote?.result?.kind === 'UNIQUE'
+      ? dayVote.result.targetIds[0]
+      : undefined
+  const revengeTargetId = dayVote?.hunterRevenge?.targetPlayerId
 
   return {
     audience: 'PLAYER',
@@ -222,16 +263,44 @@ export function projectRoomSnapshot(
     roleRevealPending,
     nightAction: projectNightAction(state, self),
     dayVote:
-      state.phase === 'DAY' && state.dayVote
+      dayVote
         ? {
-            status: state.dayVote.status,
+            status: dayVote.status,
             candidates:
-              state.dayVote.status === 'OPEN' && self.alive
+              dayVote.status === 'OPEN' && self.alive
                 ? getEligibleDayTargets(state, self.id).map((targetId) =>
                     playerById(state, targetId),
                   )
                 : [],
-            currentTargetId: state.dayVote.votes[self.id],
+            currentTargetId: dayVote.votes[self.id],
+            openedAt: dayVote.openedAt,
+            deadlineAt: dayVote.deadlineAt,
+            totals: liveDayResult?.counts ?? {},
+            result: dayVote.result
+              ? {
+                  kind: dayVote.result.kind,
+                  hangedPlayer: hangedPlayerId
+                    ? playerById(state, hangedPlayerId)
+                    : undefined,
+                  hunterRevealed: Boolean(dayVote.hunterRevenge),
+                  hunterRevengeStatus: dayVote.hunterRevenge?.status,
+                  hunterRevengeTarget:
+                    dayVote.hunterRevenge?.status === 'RESOLVED'
+                      ? revengeTargetId
+                        ? playerById(state, revengeTargetId)
+                        : null
+                      : undefined,
+                }
+              : undefined,
+            hunterRevengeAction:
+              dayVote.hunterRevenge?.status === 'PENDING' &&
+              dayVote.hunterRevenge.hunterPlayerId === self.id
+                ? {
+                    candidates: state.players
+                      .filter((player) => player.alive && player.id !== self.id)
+                      .map((player) => structuredClone(player)),
+                  }
+                : undefined,
           }
         : undefined,
   }

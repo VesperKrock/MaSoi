@@ -98,15 +98,19 @@ describe('dead-role nightly call secrecy', () => {
       type: 'FINALIZE_NIGHT_CHECKPOINT',
     })
     state = command(state, environment, { type: 'START_DAY' })
+    state = command(state, environment, { type: 'OPEN_DAY_VOTE' })
+    const voterId = state.players.find(
+      (player) => player.alive && player.id !== seerId,
+    )?.id
+    if (!voterId) throw new Error('Expected a living Day voter')
     state = command(state, environment, {
-      type: 'MODERATOR_SET_ALIVE',
-      playerId: seerId,
-      alive: false,
-      reason: 'Treo cổ ngày 1',
+      type: 'CAST_DAY_VOTE',
+      playerId: voterId,
+      targetId: seerId,
     })
-
-    advance(60_000)
-    state = command(state, environment, { type: 'START_NIGHT' })
+    advance(30_000)
+    state = command(state, environment, { type: 'CLOSE_DAY_VOTE' })
+    state = command(state, environment, { type: 'START_NEXT_NIGHT' })
     expect(state.dayNumber).toBe(2)
     expect(state.night?.calls.map(({ roleId, status }) => ({ roleId, status }))).toEqual([
       { roleId: 'werewolf', status: 'NOT_CALLED' },

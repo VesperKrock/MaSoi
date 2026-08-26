@@ -8,12 +8,28 @@ import type {
   WolfPolicy,
 } from '../../domain/game/types'
 import { getNightResolutionReadiness } from '../../domain/gameplay/night-resolution'
+import { getDayVoteWeight, resolveDayVote } from '../../domain/voting/day-vote'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
 import { getPreWitchNightRoleIds } from '../../domain/roles/role-definitions'
 
 interface ModeratorViewProps {
   state: RoomState
   dispatch: (command: RoomCommand) => Promise<boolean>
+}
+
+function useCountdownSeconds(deadlineAt: number | undefined) {
+  const [seconds, setSeconds] = useState(() =>
+    deadlineAt ? Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000)) : 0,
+  )
+  useEffect(() => {
+    if (!deadlineAt) return
+    const tick = () =>
+      setSeconds(Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000)))
+    tick()
+    const timer = window.setInterval(tick, 250)
+    return () => window.clearInterval(timer)
+  }, [deadlineAt])
+  return seconds
 }
 
 function playerName(state: RoomState, playerId: PlayerId | null | undefined) {
@@ -588,8 +604,36 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
   )
 }
 
-function DayPanel({ state }: ModeratorViewProps) {
+function DayPanel({ state, dispatch }: ModeratorViewProps) {
   const finalDeaths = state.witchCheckpoint?.finalDeaths ?? []
+  const vote = state.dayVote
+  const secondsLeft = useCountdownSeconds(vote?.deadlineAt)
+  const livingIds = state.players
+    .filter((player) => player.alive)
+    .map((player) => player.id)
+  const totals =
+    vote?.totals ??
+    (vote
+      ? resolveDayVote(
+          vote.votes,
+          livingIds,
+          livingIds,
+          Object.fromEntries(
+            livingIds.map((playerId) => [
+              playerId,
+              getDayVoteWeight(
+                state.roleAssignments.find(
+                  (assignment) => assignment.playerId === playerId,
+                )?.roleId,
+              ),
+            ]),
+          ),
+        ).counts
+      : {})
+  const hangedPlayerId =
+    vote?.result?.kind === 'UNIQUE' ? vote.result.targetIds[0] : undefined
+  const consequencesStable =
+    vote?.status === 'CLOSED' && vote.hunterRevenge?.status !== 'PENDING'
   return (
     <section className="panel day-panel">
       <div className="section-title">
@@ -610,8 +654,75 @@ function DayPanel({ state }: ModeratorViewProps) {
         <small>Không công khai vai trò · không tự mở bỏ phiếu.</small>
       </div>
       <div className="day-discussion-note">
-        <strong>Bỏ phiếu ban ngày chưa được mở trong MS-1D1.</strong>
-        <span>Hãy điều phối phần thảo luận trực tiếp tại bàn.</span>
+        {!vote && (
+          <>
+            <strong>Thảo luận không giới hạn thời gian.</strong>
+            <span>Chỉ bộ đếm bỏ phiếu mới kéo dài đúng 30 giây.</span>
+            <button
+              className="button primary full"
+              onClick={() => dispatch({ type: 'OPEN_DAY_VOTE' })}
+            >
+              Bắt đầu bỏ phiếu
+            </button>
+          </>
+        )}
+        {vote?.status === 'OPEN' && (
+          <>
+            <div className="day-vote-heading">
+              <strong>Bỏ phiếu · 00:{String(secondsLeft).padStart(2, '0')}</strong>
+              <span>Deadline do máy chủ sở hữu.</span>
+            </div>
+            <div className="day-vote-totals">
+              {state.players
+                .filter((player) => player.alive)
+                .map((player) => (
+                  <div key={player.id}>
+                    <span>{playerLabel(player)}</span>
+                    <strong>{totals[player.id] ?? 0}</strong>
+                  </div>
+                ))}
+            </div>
+            <button
+              className="button primary full"
+              disabled={secondsLeft > 0}
+              onClick={() => dispatch({ type: 'CLOSE_DAY_VOTE' })}
+            >
+              {secondsLeft > 0 ? 'Không thể chốt sớm' : 'Chốt kết quả bỏ phiếu'}
+            </button>
+          </>
+        )}
+        {vote?.status === 'CLOSED' && (
+          <>
+            <div className="day-vote-result">
+              <span>Kết quả có thẩm quyền</span>
+              <strong>
+                {vote.result?.kind === 'UNIQUE'
+                  ? `Đã treo cổ: ${playerName(state, hangedPlayerId)}`
+                  : vote.result?.kind === 'TIE'
+                    ? 'Hòa cao nhất · không ai bị treo cổ.'
+                    : 'Tất cả bỏ phiếu trắng · không ai bị treo cổ.'}
+              </strong>
+              {vote.hunterRevenge && (
+                <small>
+                  Thợ Săn đã được công khai ·{' '}
+                  {vote.hunterRevenge.status === 'PENDING'
+                    ? 'đang chọn người đi cùng.'
+                    : vote.hunterRevenge.targetPlayerId
+                      ? `đã bắn ${playerName(state, vote.hunterRevenge.targetPlayerId)}.`
+                      : 'đã chọn Không ai.'}
+                </small>
+              )}
+            </div>
+            {consequencesStable && (
+              <button
+                className="button primary full"
+                onClick={() => dispatch({ type: 'START_NEXT_NIGHT' })}
+              >
+                Bắt đầu Đêm {state.dayNumber + 1}
+              </button>
+            )}
+          </>
+        )}
       </div>
     </section>
   )

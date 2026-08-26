@@ -108,8 +108,32 @@ export interface DayVoteState {
   status: 'OPEN' | 'CLOSED'
   votes: Record<PlayerId, PlayerId | null>
   openedAt: number
+  deadlineAt: number
   closedAt?: number
+  totals?: Record<PlayerId, number>
   result?: DayVoteResult
+  hangingEffect?: DayEffect
+  hunterRevenge?: HunterDayRevenge
+}
+
+export interface DayEffect {
+  id: string
+  sourceType: 'DAY_HANGING' | 'HUNTER_REVENGE_SHOT'
+  sourceRoleId?: 'hunter'
+  actorPlayerId?: PlayerId
+  category: 'DAY_LETHAL_EFFECT' | 'NON_VILLAIN_LETHAL_EFFECT'
+  targetPlayerId: PlayerId
+  lethal: true
+  protectorBlockable: false
+  finalized: true
+}
+
+export interface HunterDayRevenge {
+  hunterPlayerId: PlayerId
+  status: 'PENDING' | 'RESOLVED'
+  targetPlayerId?: PlayerId | null
+  resolvedAt?: number
+  effect?: DayEffect
 }
 
 export type JournalEventType =
@@ -151,6 +175,10 @@ export type JournalEventType =
   | 'DAY_VOTE_CHANGED'
   | 'DAY_VOTE_CLOSED'
   | 'HANGING_RESULT'
+  | 'DAY_HANGING_CREATED'
+  | 'HUNTER_HANGING_REVEALED'
+  | 'HUNTER_REVENGE_RESOLVED'
+  | 'NEXT_NIGHT_STARTED'
   | 'PLAYER_DEATH'
   | 'MODERATOR_OVERRIDE'
   | 'PHASE_CHANGED'
@@ -233,6 +261,12 @@ export type RoomCommand =
   | { type: 'OPEN_DAY_VOTE' }
   | { type: 'CAST_DAY_VOTE'; playerId: PlayerId; targetId: PlayerId | null }
   | { type: 'CLOSE_DAY_VOTE' }
+  | {
+      type: 'SUBMIT_HUNTER_REVENGE'
+      playerId: PlayerId
+      targetId: PlayerId | null
+    }
+  | { type: 'START_NEXT_NIGHT' }
   | {
       type: 'MODERATOR_SET_ALIVE'
       playerId: PlayerId

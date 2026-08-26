@@ -185,13 +185,69 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
-  if (surface === 'vote') {
+  if (surface === 'vote' || surface === 'day-vote') {
     return {
       ...baseSnapshot,
       phase: 'DAY',
       dayVote: {
         status: 'OPEN',
         candidates: players.slice(1),
+        openedAt: Date.now(),
+        deadlineAt: Date.now() + 30_000,
+        totals: Object.fromEntries(players.slice(1).map((player, index) => [
+          player.id,
+          index % 3,
+        ])),
+      },
+    }
+  }
+  if (surface === 'hunter-revenge') {
+    return {
+      ...baseSnapshot,
+      phase: 'DAY',
+      self: { ...players[0], alive: false },
+      players: [{ ...players[0], alive: false }, ...players.slice(1)],
+      roleIdentity: {
+        roleId: 'hunter',
+        displayName: 'Thợ Săn',
+        factionMeaning: 'Dân Làng',
+        rulesText: 'Nếu bị treo cổ, chọn một người đi cùng hoặc Không ai.',
+        cardAsset: cardAssetUrl('Thợ Săn.jpg'),
+      },
+      dayVote: {
+        status: 'CLOSED',
+        candidates: [],
+        openedAt: Date.now() - 31_000,
+        deadlineAt: Date.now() - 1_000,
+        totals: { [players[0].id]: 5 },
+        result: {
+          kind: 'UNIQUE',
+          hangedPlayer: { ...players[0], alive: false },
+          hunterRevealed: true,
+          hunterRevengeStatus: 'PENDING',
+        },
+        hunterRevengeAction: {
+          candidates: players.slice(1),
+        },
+      },
+    }
+  }
+  if (surface === 'hunter-pending') {
+    return {
+      ...baseSnapshot,
+      phase: 'DAY',
+      dayVote: {
+        status: 'CLOSED',
+        candidates: [],
+        openedAt: Date.now() - 31_000,
+        deadlineAt: Date.now() - 1_000,
+        totals: { [players[1].id]: 5 },
+        result: {
+          kind: 'UNIQUE',
+          hangedPlayer: { ...players[1], alive: false },
+          hunterRevealed: true,
+          hunterRevengeStatus: 'PENDING',
+        },
       },
     }
   }

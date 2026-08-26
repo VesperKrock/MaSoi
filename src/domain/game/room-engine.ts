@@ -24,7 +24,13 @@ import {
   getWitchCapabilities,
   validateWitchDecision,
 } from '../gameplay/witch-checkpoint'
-import { resolveDayVote } from '../voting/day-vote'
+import {
+  createDayHangingEffect,
+  createHunterRevengeEffect,
+  dayVoteDurationMs,
+  getDayVoteWeight,
+  resolveDayVote,
+} from '../voting/day-vote'
 import { systemRandom, type RandomSource } from '../voting/random'
 import {
   analyzeWolfVotes,
@@ -439,6 +445,12 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
 
   const previousPhase = state.phase
   if (previousPhase === 'DAY') {
+    if (!state.dayVote || state.dayVote.status !== 'CLOSED') {
+      fail('Phải hoàn tất bỏ phiếu ban ngày trước khi bắt đầu Đêm tiếp theo.')
+    }
+    if (state.dayVote.hunterRevenge?.status === 'PENDING') {
+      fail('Phải chờ Thợ Săn hoàn tất phát bắn trả thù.')
+    }
     state.dayNumber += 1
   }
   state.phase = 'NIGHT'
@@ -1346,15 +1358,22 @@ function openDayVote(state: RoomState, environment: GameEnvironment): void {
   if (state.phase !== 'DAY') {
     fail('Chỉ mở bỏ phiếu treo cổ vào ban ngày.')
   }
-  if (state.dayVote?.status === 'OPEN') {
-    fail('Bỏ phiếu ban ngày đang mở.')
+  if (state.dayVote) {
+    fail('Mỗi Ngày chỉ có một lượt bỏ phiếu treo cổ.')
   }
+  const openedAt = environment.now()
   state.dayVote = {
     status: 'OPEN',
     votes: {},
-    openedAt: environment.now(),
+    openedAt,
+    deadlineAt: openedAt + dayVoteDurationMs,
   }
-  appendEvent(state, environment, 'DAY_VOTE_OPENED')
+  appendEvent(state, environment, 'DAY_VOTE_OPENED', {
+    metadata: {
+      durationMs: dayVoteDurationMs,
+      deadlineAt: state.dayVote.deadlineAt,
+    },
+  })
 }
 
 function castDayVote(
@@ -1366,6 +1385,9 @@ function castDayVote(
   if (state.phase !== 'DAY' || state.dayVote?.status !== 'OPEN') {
     fail('Bỏ phiếu ban ngày chưa mở.')
   }
+  if (environment.now() >= state.dayVote.deadlineAt) {
+    fail('Thời hạn bỏ phiếu ban ngày đã kết thúc.')
+  }
   const player = state.players.find((entry) => entry.id === playerId)
   if (!player?.alive) {
     fail('Chỉ người chơi còn sống mới được bỏ phiếu.')
@@ -1374,24 +1396,41 @@ function castDayVote(
     fail('Mục tiêu treo cổ không hợp lệ.')
   }
   const previousTargetId = state.dayVote.votes[playerId]
-  state.dayVote.votes[playerId] = targetId
+  const nextTargetId = previousTargetId === targetId ? null : targetId
+  state.dayVote.votes[playerId] = nextTargetId
   appendEvent(state, environment, 'DAY_VOTE_CHANGED', {
     actorPlayerId: playerId,
-    targetPlayerId: targetId ?? undefined,
-    metadata: { previousTargetId, abstain: targetId === null },
+    targetPlayerId: nextTargetId ?? undefined,
+    metadata: { previousTargetId, abstain: nextTargetId === null },
   })
 }
 
 function closeDayVote(state: RoomState, environment: GameEnvironment): void {
-  if (state.phase !== 'DAY' || state.dayVote?.status !== 'OPEN') {
+  if (state.phase !== 'DAY' || !state.dayVote) {
     fail('Không có lượt bỏ phiếu ban ngày đang mở.')
+  }
+  if (state.dayVote.status === 'CLOSED') return
+  const closedAt = environment.now()
+  if (closedAt < state.dayVote.deadlineAt) {
+    fail('Chưa hết 30 giây bỏ phiếu; Quản trò không thể chốt sớm.')
   }
   const livingIds = state.players
     .filter((player) => player.alive)
     .map((player) => player.id)
-  const result = resolveDayVote(state.dayVote.votes, livingIds, livingIds)
+  const weights = Object.fromEntries(
+    livingIds.map((playerId) => [
+      playerId,
+      getDayVoteWeight(getRoleIdForPlayer(state, playerId)),
+    ]),
+  )
+  const result = resolveDayVote(
+    state.dayVote.votes,
+    livingIds,
+    livingIds,
+    weights,
+  )
   state.dayVote.status = 'CLOSED'
-  state.dayVote.closedAt = environment.now()
+  state.dayVote.closedAt = closedAt
   state.dayVote.result = result
   appendEvent(state, environment, 'DAY_VOTE_CLOSED', {
     metadata: { voteCount: Object.keys(state.dayVote.votes).length },
@@ -1401,6 +1440,87 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
       result.kind === 'UNIQUE' ? result.targetIds[0] : undefined,
     resolution: result.kind,
     metadata: { targetIds: result.targetIds, counts: result.counts },
+  })
+  if (result.kind === 'UNIQUE') {
+    const targetId = result.targetIds[0]
+    const target = state.players.find((player) => player.id === targetId)
+    if (!target?.alive) fail('Mục tiêu treo cổ không còn hợp lệ.')
+    const effect = createDayHangingEffect(environment.nextId(), targetId)
+    state.dayVote.hangingEffect = effect
+    target.alive = false
+    appendEvent(state, environment, 'DAY_HANGING_CREATED', {
+      targetPlayerId: targetId,
+      resolution: 'FINAL',
+      metadata: {
+        sourceType: effect.sourceType,
+        protectorBlockable: false,
+        witchInteractable: false,
+      },
+    })
+    appendEvent(state, environment, 'PLAYER_DEATH', {
+      targetPlayerId: targetId,
+      resolution: 'DAY_HANGING',
+      metadata: { sourceEffectId: effect.id },
+    })
+    if (getRoleIdForPlayer(state, targetId) === 'hunter') {
+      state.dayVote.hunterRevenge = {
+        hunterPlayerId: targetId,
+        status: 'PENDING',
+      }
+      appendEvent(state, environment, 'HUNTER_HANGING_REVEALED', {
+        actorRoleId: 'hunter',
+        actorPlayerId: targetId,
+        resolution: 'REVENGE_PENDING',
+      })
+    }
+  }
+}
+
+function submitHunterRevenge(
+  state: RoomState,
+  playerId: PlayerId,
+  targetId: PlayerId | null,
+  environment: GameEnvironment,
+): void {
+  if (state.phase !== 'DAY' || state.dayVote?.status !== 'CLOSED') {
+    fail('Phát bắn trả thù chỉ tồn tại sau kết quả treo cổ hiện tại.')
+  }
+  const revenge = state.dayVote.hunterRevenge
+  if (!revenge || revenge.hunterPlayerId !== playerId) {
+    fail('Chỉ Thợ Săn vừa bị treo cổ mới được trả thù.')
+  }
+  if (revenge.status === 'RESOLVED') {
+    if (revenge.targetPlayerId === targetId) return
+    fail('Phát bắn trả thù đã được giải quyết.')
+  }
+  if (targetId !== null) {
+    const target = state.players.find((player) => player.id === targetId)
+    if (!target?.alive || target.id === playerId) {
+      fail('Mục tiêu trả thù không hợp lệ.')
+    }
+    const effect = createHunterRevengeEffect(
+      environment.nextId(),
+      playerId,
+      targetId,
+    )
+    target.alive = false
+    revenge.effect = effect
+    appendEvent(state, environment, 'PLAYER_DEATH', {
+      actorPlayerId: playerId,
+      actorRoleId: 'hunter',
+      targetPlayerId: targetId,
+      resolution: 'HUNTER_REVENGE_SHOT',
+      metadata: { sourceEffectId: effect.id, protectorBlockable: false },
+    })
+  }
+  revenge.status = 'RESOLVED'
+  revenge.targetPlayerId = targetId
+  revenge.resolvedAt = environment.now()
+  appendEvent(state, environment, 'HUNTER_REVENGE_RESOLVED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'hunter',
+    targetPlayerId: targetId ?? undefined,
+    resolution: targetId ? 'TARGET_KILLED' : 'NOBODY',
   })
 }
 
@@ -1572,6 +1692,22 @@ export function applyRoomCommand(
       break
     case 'CLOSE_DAY_VOTE':
       closeDayVote(state, environment)
+      break
+    case 'SUBMIT_HUNTER_REVENGE':
+      submitHunterRevenge(
+        state,
+        command.playerId,
+        command.targetId,
+        environment,
+      )
+      break
+    case 'START_NEXT_NIGHT':
+      if (state.phase === 'NIGHT') break
+      startNight(state, environment)
+      appendEvent(state, environment, 'NEXT_NIGHT_STARTED', {
+        resolution: `NIGHT_${state.dayNumber}`,
+        metadata: { automaticRoleCall: false },
+      })
       break
     case 'MODERATOR_SET_ALIVE':
       setPlayerAlive(

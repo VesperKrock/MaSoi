@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { playerLabel } from '../../components/player-label'
 import type { RoomCommand } from '../../domain/game/types'
 import type {
@@ -9,6 +9,21 @@ import type {
 interface PlayerViewProps {
   snapshot: PlayerRoomSnapshot
   dispatch: (command: RoomCommand) => Promise<boolean>
+}
+
+function useCountdownSeconds(deadlineAt: number | undefined) {
+  const [seconds, setSeconds] = useState(() =>
+    deadlineAt ? Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000)) : 0,
+  )
+  useEffect(() => {
+    if (!deadlineAt) return
+    const tick = () =>
+      setSeconds(Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000)))
+    tick()
+    const timer = window.setInterval(tick, 250)
+    return () => window.clearInterval(timer)
+  }, [deadlineAt])
+  return seconds
 }
 
 function PlayerLobby({ snapshot }: { snapshot: PlayerRoomSnapshot }) {
@@ -72,7 +87,17 @@ function NeutralScreen({
   onRecheck: () => void
 }) {
   const waitingForStart = snapshot.lifecycle === 'ROLE_REVEAL'
-  const copy = !snapshot.self.alive
+  const hunterPending =
+    snapshot.phase === 'DAY' &&
+    snapshot.dayVote?.result?.hunterRevealed &&
+    snapshot.dayVote.result.hunterRevengeStatus === 'PENDING'
+  const copy = hunterPending
+    ? {
+        eyebrow: `NGÀY ${snapshot.dayNumber} · KẾT QUẢ TREO CỔ`,
+        title: 'THỢ SĂN BỊ TREO CỔ.',
+        body: `${snapshot.dayVote?.result?.hangedPlayer?.alias ?? 'Thợ Săn'} đang chọn người đi cùng.`,
+      }
+    : !snapshot.self.alive
     ? {
         eyebrow:
           snapshot.phase === 'DAY'
@@ -131,21 +156,27 @@ function TargetButton({
   name,
   selected,
   onClick,
+  total,
+  disabled = false,
 }: {
   seat: number | string
   name: string
   selected: boolean
   onClick: () => void
+  total?: number
+  disabled?: boolean
 }) {
   return (
     <button
       className={selected ? 'target selected' : 'target'}
       onClick={onClick}
+      disabled={disabled}
       title={name}
       data-required-control
     >
       <span>{typeof seat === 'number' ? String(seat).padStart(2, '0') : seat}</span>
       <strong>{name}</strong>
+      {total !== undefined && <em className="target-total">{total}</em>}
     </button>
   )
 }
@@ -424,15 +455,21 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
 
 function DayVoteView({ snapshot, dispatch }: PlayerViewProps) {
   const vote = snapshot.dayVote
+  const secondsLeft = useCountdownSeconds(vote?.deadlineAt)
   if (!vote || vote.status !== 'OPEN' || !snapshot.self.alive) return null
+
+  const expired = secondsLeft === 0
 
   return (
     <section className="player-action compact-action day-vote-player">
       <header>
         <p className="eyebrow">NGÀY {snapshot.dayNumber} · BỎ PHIẾU</p>
         <h1>Chọn người treo cổ</h1>
-        <p>Có thể đổi lựa chọn đến khi Quản trò đóng phiếu.</p>
+        <p>Chạm lại lựa chọn hiện tại để bỏ phiếu trắng.</p>
       </header>
+      <div className="day-vote-clock" aria-live="polite">
+        {expired ? 'Đang chờ kết quả' : `00:${String(secondsLeft).padStart(2, '0')}`}
+      </div>
       <div className="target-list">
         {vote.candidates.map((candidate) => (
           <TargetButton
@@ -440,6 +477,8 @@ function DayVoteView({ snapshot, dispatch }: PlayerViewProps) {
             seat={candidate.seat}
             name={candidate.alias}
             selected={vote.currentTargetId === candidate.id}
+            total={vote.totals[candidate.id] ?? 0}
+            disabled={expired}
             onClick={() =>
               void dispatch({
                 type: 'CAST_DAY_VOTE',
@@ -451,8 +490,58 @@ function DayVoteView({ snapshot, dispatch }: PlayerViewProps) {
         ))}
       </div>
       <p className="vote-save-status">
-        {vote.currentTargetId ? 'Đã lưu lựa chọn.' : 'Chưa chọn.'}
+        {expired
+          ? 'Thời hạn đã khóa trên máy chủ.'
+          : vote.currentTargetId
+            ? 'Đã lưu lựa chọn · chạm lại để bỏ phiếu trắng.'
+            : 'Phiếu trắng.'}
       </p>
+    </section>
+  )
+}
+
+function HunterRevengeView({ snapshot, dispatch }: PlayerViewProps) {
+  const action = snapshot.dayVote?.hunterRevengeAction
+  const [targetId, setTargetId] = useState<string | null | undefined>(undefined)
+  if (!action) return null
+  return (
+    <section className="player-action compact-action hunter-revenge-action">
+      <header>
+        <p className="eyebrow">THỢ SĂN · PHÁT BẮN TRẢ THÙ</p>
+        <h1>Chọn người đi cùng</h1>
+        <p>Chọn đúng một người còn sống hoặc Không ai.</p>
+      </header>
+      <div className="target-list">
+        {action.candidates.map((candidate) => (
+          <TargetButton
+            key={candidate.id}
+            seat={candidate.seat}
+            name={candidate.alias}
+            selected={targetId === candidate.id}
+            onClick={() => setTargetId(candidate.id)}
+          />
+        ))}
+        <TargetButton
+          seat="—"
+          name="Không ai"
+          selected={targetId === null}
+          onClick={() => setTargetId(null)}
+        />
+      </div>
+      <button
+        className="button primary full action-confirm"
+        disabled={targetId === undefined}
+        onClick={() =>
+          void dispatch({
+            type: 'SUBMIT_HUNTER_REVENGE',
+            playerId: snapshot.self.id,
+            targetId: targetId ?? null,
+          })
+        }
+        data-required-control
+      >
+        Xác nhận phát bắn
+      </button>
     </section>
   )
 }
@@ -468,9 +557,11 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
           ? 'REVEAL'
           : snapshot.nightAction
             ? 'NIGHT_ACTION'
-            : snapshot.dayVote?.status === 'OPEN' && snapshot.self.alive
-              ? 'DAY_VOTE'
-              : 'NEUTRAL'
+            : snapshot.dayVote?.hunterRevengeAction
+              ? 'HUNTER_REVENGE'
+              : snapshot.dayVote?.status === 'OPEN' && snapshot.self.alive
+                ? 'DAY_VOTE'
+                : 'NEUTRAL'
 
   return (
     <main
@@ -500,6 +591,9 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
         )}
         {activeSurface === 'DAY_VOTE' && (
           <DayVoteView snapshot={snapshot} dispatch={dispatch} />
+        )}
+        {activeSurface === 'HUNTER_REVENGE' && (
+          <HunterRevengeView snapshot={snapshot} dispatch={dispatch} />
         )}
         {activeSurface === 'NEUTRAL' && (
           <NeutralScreen snapshot={snapshot} onRecheck={() => setRechecking(true)} />
