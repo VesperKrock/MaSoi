@@ -13,6 +13,7 @@ export interface RoleDefinition {
     | 'SELECT_TARGET'
     | 'HUNTER_PRELOCK'
     | 'WITCH_DECISION'
+    | 'CUPID_PAIRING'
     | 'NONE'
   targetRule: 'LIVING_NON_WOLF' | 'LIVING_OTHER' | 'LIVING_ANY' | 'NONE'
   nightStage: 'PRE_WITCH' | 'FINAL_CHECKPOINT' | null
@@ -21,6 +22,22 @@ export interface RoleDefinition {
 }
 
 export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
+  cupid: {
+    id: 'cupid',
+    displayName: 'Thần Tình Yêu',
+    team: 'VILLAGE',
+    cardAsset: null,
+    actsAtNight: true,
+    nightOrder: 5,
+    firstNightOnly: true,
+    actionType: 'CUPID_PAIRING',
+    targetRule: 'LIVING_OTHER',
+    nightStage: 'PRE_WITCH',
+    description:
+      'Đêm đầu tiên ghép đúng hai người yêu nhau; quan hệ không đổi role hay phe.',
+    instructions:
+      'Chọn đúng hai người còn sống, khác nhau và không phải chính bạn.',
+  },
   werewolf: {
     id: 'werewolf',
     displayName: 'Ma Sói',

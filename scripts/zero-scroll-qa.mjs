@@ -52,6 +52,8 @@ const defaultSurfaces = [
   'seer-result',
   'protector-action',
   'hunter-action',
+  'cupid-action',
+  'lover-reveal',
   'witch-action',
   'witch-poison-action',
   'vote',

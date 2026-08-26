@@ -5,6 +5,7 @@ import {
   normalizeFactionTransitionState,
   type FactionTransitionState,
 } from '../../domain/gameplay/faction-transitions'
+import type { CupidLoverState } from '../../domain/gameplay/lovers'
 import {
   cardAssetUrl,
   classicRoleById,
@@ -165,6 +166,16 @@ Object.assign(serverMessages, {
   DAY_CONSEQUENCE_NOT_READY: 'Phải hoàn tất kết quả treo cổ và phát bắn Thợ Săn trước khi bắt đầu Đêm tiếp theo.',
 })
 
+Object.assign(serverMessages, {
+  CUPID_PAIRING_NIGHT_ONE_ONLY: 'Thần Tình Yêu chỉ được ghép đôi trong Đêm 1.',
+  CUPID_PAIR_ALREADY_EXISTS: 'Cặp Người Yêu của ván này đã được xác lập.',
+  CUPID_TARGETS_MUST_BE_DISTINCT: 'Hãy chọn đúng hai người khác nhau.',
+  CUPID_CANNOT_TARGET_SELF: 'Thần Tình Yêu không thể tự ghép đôi cho mình.',
+  CUPID_TARGET_NOT_LIVING: 'Cả hai Người Yêu phải còn sống khi ghép đôi.',
+  LOVER_REVEAL_UNAVAILABLE:
+    'Thiết bị này không có thông tin Người Yêu riêng để xác nhận.',
+})
+
 const machineCodes = new Set(Object.keys(serverMessages))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -293,6 +304,13 @@ function readNightAction(value: unknown): NightAction {
           : undefined,
       }
     : undefined
+  const cupid = isRecord(value.cupid)
+    ? {
+        selectedTargetIds: readStringArray(
+          value.cupid.selectedTargetIds ?? [],
+        ),
+      }
+    : undefined
   const result = isRecord(value.result)
     ? {
         targetId: typeof value.result.targetId === 'string' ? value.result.targetId : null,
@@ -308,6 +326,8 @@ function readNightAction(value: unknown): NightAction {
         ? 'WOLF_VOTE'
         : value.kind === 'HUNTER_PRELOCK'
           ? 'HUNTER_PRELOCK'
+          : value.kind === 'CUPID_PAIRING'
+            ? 'CUPID_PAIRING'
         : value.kind === 'WITCH_DECISION'
           ? 'WITCH_DECISION'
           : 'SELECT_TARGET',
@@ -324,6 +344,7 @@ function readNightAction(value: unknown): NightAction {
     wolf,
     seer,
     witch,
+    cupid,
     result,
     openedAt: parseTimestamp(value.openedAt),
     completedAt:
@@ -432,8 +453,17 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
           : undefined,
       category: entry.category,
       targetPlayerId: entry.targetPlayerId,
+      sourcePlayerId:
+        typeof entry.sourcePlayerId === 'string'
+          ? entry.sourcePlayerId
+          : undefined,
+      coupleId: typeof entry.coupleId === 'string' ? entry.coupleId : undefined,
       lethal: entry.lethal === true,
       protectorBlockable: entry.protectorBlockable === true,
+      witchInteractable:
+        typeof entry.witchInteractable === 'boolean'
+          ? entry.witchInteractable
+          : undefined,
       outcome: entry.outcome,
       conversion:
         isRecord(entry.conversion) &&
@@ -672,9 +702,11 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
         ? 'WOLF_VOTE'
         : value.kind === 'HUNTER_PRELOCK'
           ? 'HUNTER_PRELOCK'
-        : value.kind === 'WITCH_DECISION'
-          ? 'WITCH_DECISION'
-          : 'SELECT_TARGET',
+          : value.kind === 'CUPID_PAIRING'
+            ? 'CUPID_PAIRING'
+            : value.kind === 'WITCH_DECISION'
+              ? 'WITCH_DECISION'
+              : 'SELECT_TARGET',
     roleId: readRoleId(value.roleId),
     roleName: String(value.roleName ?? ''),
     instructions: String(value.instructions ?? ''),
@@ -691,7 +723,8 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
       value.mode === 'SEER_RESULT' ||
       value.mode === 'PROTECTOR_SELECT' ||
       value.mode === 'HUNTER_PRELOCK' ||
-      value.mode === 'WITCH_DECISION'
+      value.mode === 'WITCH_DECISION' ||
+      value.mode === 'CUPID_PAIRING'
         ? value.mode
         : 'WOLF_BALLOT',
     inspectedTarget: isRecord(value.inspectedTarget)
@@ -712,6 +745,66 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
     resurrectionAvailable: value.resurrectionAvailable === true,
     poisonAvailable: value.poisonAvailable === true,
     witchAttackedThisNight: value.witchAttackedThisNight === true,
+    selectedTargetIds: readStringArray(value.selectedTargetIds ?? []),
+  }
+}
+
+function readCupidLovers(value: unknown): CupidLoverState {
+  if (!isRecord(value)) {
+    return {
+      couple: null,
+      loverRevealAcknowledgedPlayerIds: [],
+      objective: null,
+    }
+  }
+  const coupleValue = isRecord(value.couple) ? value.couple : null
+  const objectiveValue = isRecord(value.objective) ? value.objective : null
+  const loverPlayerIds = coupleValue
+    ? readStringArray(coupleValue.loverPlayerIds)
+    : []
+  if (coupleValue && loverPlayerIds.length !== 2) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const status = objectiveValue?.status
+  if (
+    objectiveValue &&
+    status !== 'UNRESOLVED' &&
+    status !== 'ACTIVE' &&
+    status !== 'FALLBACK_VILLAGE'
+  ) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const objectiveStatus =
+    status === 'UNRESOLVED' ||
+    status === 'ACTIVE' ||
+    status === 'FALLBACK_VILLAGE'
+      ? status
+      : null
+  return {
+    couple: coupleValue
+      ? {
+          id: String(coupleValue.id),
+          cupidPlayerId: String(coupleValue.cupidPlayerId),
+          loverPlayerIds: [loverPlayerIds[0], loverPlayerIds[1]],
+          pairedNightNumber: 1,
+          pairedAt: parseTimestamp(coupleValue.pairedAt),
+        }
+      : null,
+    loverRevealAcknowledgedPlayerIds: readStringArray(
+      value.loverRevealAcknowledgedPlayerIds ?? [],
+    ),
+    objective: objectiveValue && objectiveStatus
+      ? {
+          cupidPlayerId: String(objectiveValue.cupidPlayerId),
+          status: objectiveStatus,
+          changedAt: parseTimestamp(objectiveValue.changedAt),
+          reason:
+            objectiveValue.reason === 'CUPID_DEAD_BEFORE_PAIRING' ||
+            objectiveValue.reason === 'COUPLE_DEAD'
+              ? objectiveValue.reason
+              : undefined,
+        }
+      : null,
   }
 }
 
@@ -721,7 +814,8 @@ function readDayEffect(value: unknown): DayEffect | undefined {
     typeof value.id !== 'string' ||
     typeof value.targetPlayerId !== 'string' ||
     (value.sourceType !== 'DAY_HANGING' &&
-      value.sourceType !== 'HUNTER_REVENGE_SHOT')
+      value.sourceType !== 'HUNTER_REVENGE_SHOT' &&
+      value.sourceType !== 'LOVER_HEARTBREAK')
   ) {
     return undefined
   }
@@ -729,7 +823,11 @@ function readDayEffect(value: unknown): DayEffect | undefined {
     id: value.id,
     sourceType: value.sourceType,
     sourceRoleId:
-      value.sourceType === 'HUNTER_REVENGE_SHOT' ? 'hunter' : undefined,
+      value.sourceType === 'HUNTER_REVENGE_SHOT'
+        ? 'hunter'
+        : value.sourceType === 'LOVER_HEARTBREAK'
+          ? 'cupid'
+          : undefined,
     actorPlayerId:
       typeof value.actorPlayerId === 'string' ? value.actorPlayerId : undefined,
     category:
@@ -737,8 +835,14 @@ function readDayEffect(value: unknown): DayEffect | undefined {
         ? 'DAY_LETHAL_EFFECT'
         : 'NON_VILLAIN_LETHAL_EFFECT',
     targetPlayerId: value.targetPlayerId,
+    sourcePlayerId:
+      typeof value.sourcePlayerId === 'string'
+        ? value.sourcePlayerId
+        : undefined,
+    coupleId: typeof value.coupleId === 'string' ? value.coupleId : undefined,
     lethal: true,
     protectorBlockable: false,
+    witchInteractable: false,
     finalized: true,
   }
 }
@@ -793,6 +897,11 @@ function readModeratorDayVote(value: unknown): DayVoteState | null {
           }
         : undefined,
     hangingEffect: readDayEffect(value.hangingEffect),
+    consequenceEffects: Array.isArray(value.consequenceEffects)
+      ? value.consequenceEffects
+          .map(readDayEffect)
+          .filter((effect): effect is DayEffect => Boolean(effect))
+      : [],
     hunterRevenge:
       revengeValue && typeof revengeValue.hunterPlayerId === 'string'
         ? {
@@ -1012,6 +1121,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
         }),
       ),
     ),
+    cupidLovers: readCupidLovers(value.cupidLovers),
     journal: [
       ...lifecycleJournal(payload),
       ...(value.night ? readRemoteNight(value.night).events : []),
@@ -1059,6 +1169,25 @@ export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
       : undefined,
     roleRevealPending:
       room.status === 'ROLE_REVEAL' && Boolean(role) && !selfRemote.revealConfirmed,
+    loverRelationship:
+      isRecord(value.loverRelationship) &&
+      isRecord(value.loverRelationship.partner)
+        ? {
+            partner: readRemotePlayer(value.loverRelationship.partner),
+            revealPending: value.loverRelationship.revealPending === true,
+          }
+        : undefined,
+    cupidPair:
+      isRecord(value.cupidPair) &&
+      Array.isArray(value.cupidPair.lovers) &&
+      value.cupidPair.lovers.length === 2
+        ? {
+            lovers: value.cupidPair.lovers.map(readRemotePlayer) as [
+              Player,
+              Player,
+            ],
+          }
+        : undefined,
     nightAction: readPlayerNightAction(value.nightAction),
     dayVote: readPlayerDayVote(value.dayVote),
   }
@@ -1267,9 +1396,11 @@ export class SupabaseRoomTransport implements RoomTransport {
       } else if (command.type === 'CALL_NIGHT_ROLE') {
         functionName =
           command.roleId === 'witch'
-            ? 'ms1c_open_witch_call'
+            ? 'ms1f_open_witch_call'
             : command.roleId === 'hunter'
               ? 'ms1d1_open_hunter_call'
+              : command.roleId === 'cupid'
+                ? 'ms1f_open_cupid_call'
             : 'ms1b1_open_night_role_call'
       } else if (command.type === 'CAST_WOLF_VOTE') {
         functionName = 'ms1b1_submit_wolf_ballot'
@@ -1294,7 +1425,7 @@ export class SupabaseRoomTransport implements RoomTransport {
       } else if (command.type === 'SUBMIT_WITCH_DECISION') {
         functionName = 'ms1c_submit_witch_decision'
       } else if (command.type === 'FINALIZE_NIGHT_CHECKPOINT') {
-        functionName = 'ms1c_finalize_night_checkpoint'
+        functionName = 'ms1f_finalize_night_checkpoint'
       } else if (command.type === 'START_DAY') {
         functionName = 'ms1d1_start_morning'
       } else if (command.type === 'OPEN_DAY_VOTE') {
@@ -1302,11 +1433,15 @@ export class SupabaseRoomTransport implements RoomTransport {
       } else if (command.type === 'CAST_DAY_VOTE') {
         functionName = 'ms1d2_cast_day_vote'
       } else if (command.type === 'CLOSE_DAY_VOTE') {
-        functionName = 'ms1d2_resolve_day_vote'
+        functionName = 'ms1f_resolve_day_vote'
       } else if (command.type === 'SUBMIT_HUNTER_REVENGE') {
-        functionName = 'ms1d2_submit_hunter_revenge'
+        functionName = 'ms1f_submit_hunter_revenge'
       } else if (command.type === 'START_NEXT_NIGHT') {
-        functionName = 'ms1d2_start_next_night'
+        functionName = 'ms1f_start_next_night'
+      } else if (command.type === 'SUBMIT_CUPID_PAIRING') {
+        functionName = 'ms1f_submit_cupid_pairing'
+      } else if (command.type === 'ACKNOWLEDGE_LOVER_REVEAL') {
+        functionName = 'ms1f_acknowledge_lover_reveal'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }
@@ -1314,7 +1449,8 @@ export class SupabaseRoomTransport implements RoomTransport {
       if (
         (command.type === 'CALL_NIGHT_ROLE' &&
           command.roleId !== 'witch' &&
-          command.roleId !== 'hunter') ||
+          command.roleId !== 'hunter' &&
+          command.roleId !== 'cupid') ||
         command.type === 'COMPLETE_NIGHT_CALL'
       ) {
         args.p_role_id = command.roleId
@@ -1322,6 +1458,10 @@ export class SupabaseRoomTransport implements RoomTransport {
       if (command.type === 'SUBMIT_WITCH_DECISION') {
         args.p_resurrection_target_id = command.resurrectionTargetId
         args.p_poison_target_id = command.poisonTargetId
+      }
+      if (command.type === 'SUBMIT_CUPID_PAIRING') {
+        args.p_first_target_player_id = command.targetIds[0]
+        args.p_second_target_player_id = command.targetIds[1]
       }
       if (
         command.type === 'CAST_WOLF_VOTE' ||

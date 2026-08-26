@@ -125,14 +125,14 @@ describe('MS-1D2 Supabase transport projections', () => {
       p_room_id: room.id,
       p_target_player_id: 'player-b',
     })
-    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1d2_submit_hunter_revenge', {
+    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1f_submit_hunter_revenge', {
       p_room_id: room.id,
       p_target_player_id: null,
     })
-    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1d2_resolve_day_vote', {
+    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1f_resolve_day_vote', {
       p_room_id: room.id,
     })
-    expect(rpc).toHaveBeenNthCalledWith(4, 'ms1d2_start_next_night', {
+    expect(rpc).toHaveBeenNthCalledWith(4, 'ms1f_start_next_night', {
       p_room_id: room.id,
     })
   })

@@ -63,6 +63,12 @@ export const roomTransportErrorCodes = {
   hunterRevengeNotPending: 'HUNTER_REVENGE_NOT_PENDING',
   hunterRevengeAlreadyResolved: 'HUNTER_REVENGE_ALREADY_RESOLVED',
   dayConsequenceNotReady: 'DAY_CONSEQUENCE_NOT_READY',
+  cupidPairingNightOneOnly: 'CUPID_PAIRING_NIGHT_ONE_ONLY',
+  cupidPairAlreadyExists: 'CUPID_PAIR_ALREADY_EXISTS',
+  cupidTargetsMustBeDistinct: 'CUPID_TARGETS_MUST_BE_DISTINCT',
+  cupidCannotTargetSelf: 'CUPID_CANNOT_TARGET_SELF',
+  cupidTargetNotLiving: 'CUPID_TARGET_NOT_LIVING',
+  loverRevealUnavailable: 'LOVER_REVEAL_UNAVAILABLE',
 } as const
 
 export type RoomTransportErrorCode =

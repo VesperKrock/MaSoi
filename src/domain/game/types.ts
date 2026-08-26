@@ -1,6 +1,7 @@
 import type { RoleId } from '../roles/classic-catalog'
 import type { PersistedNightResolution } from '../gameplay/night-resolution'
 import type { FactionTransitionState } from '../gameplay/faction-transitions'
+import type { CupidLoverState } from '../gameplay/lovers'
 import type {
   WitchDecision,
   PersistedWitchCheckpoint,
@@ -9,6 +10,7 @@ import type {
 
 export type { RoleId } from '../roles/classic-catalog'
 export type { PersistedNightResolution } from '../gameplay/night-resolution'
+export type { CupidLoverState } from '../gameplay/lovers'
 export type {
   WitchCheckpointResult,
   WitchDecision,
@@ -67,7 +69,12 @@ export interface FinalTargetResult {
 export interface NightAction {
   id: string
   roleId: RoleId
-  kind: 'WOLF_VOTE' | 'SELECT_TARGET' | 'HUNTER_PRELOCK' | 'WITCH_DECISION'
+  kind:
+    | 'WOLF_VOTE'
+    | 'SELECT_TARGET'
+    | 'HUNTER_PRELOCK'
+    | 'WITCH_DECISION'
+    | 'CUPID_PAIRING'
   status: 'OPEN' | 'COMPLETED' | 'CLOSED_BY_MODERATOR'
   eligibleActorIds: PlayerId[]
   eligibleTargetIds: PlayerId[]
@@ -86,6 +93,9 @@ export interface NightAction {
     poisonAvailable: boolean
     attackedThisNight: boolean
     decision?: WitchDecision
+  }
+  cupid?: {
+    selectedTargetIds: PlayerId[]
   }
   result?: FinalTargetResult
   openedAt: number
@@ -114,18 +124,25 @@ export interface DayVoteState {
   totals?: Record<PlayerId, number>
   result?: DayVoteResult
   hangingEffect?: DayEffect
+  consequenceEffects?: DayEffect[]
   hunterRevenge?: HunterDayRevenge
 }
 
 export interface DayEffect {
   id: string
-  sourceType: 'DAY_HANGING' | 'HUNTER_REVENGE_SHOT'
-  sourceRoleId?: 'hunter'
+  sourceType:
+    | 'DAY_HANGING'
+    | 'HUNTER_REVENGE_SHOT'
+    | 'LOVER_HEARTBREAK'
+  sourceRoleId?: 'hunter' | 'cupid'
   actorPlayerId?: PlayerId
+  sourcePlayerId?: PlayerId
+  coupleId?: string
   category: 'DAY_LETHAL_EFFECT' | 'NON_VILLAIN_LETHAL_EFFECT'
   targetPlayerId: PlayerId
   lethal: true
   protectorBlockable: false
+  witchInteractable?: false
   finalized: true
 }
 
@@ -184,6 +201,10 @@ export type JournalEventType =
   | 'HALF_WOLF_TRANSFORMED'
   | 'HALF_WOLF_TRANSFORMATION_CANCELED'
   | 'TRAITOR_CONVERTED_TO_VILLAGE'
+  | 'CUPID_PAIR_CREATED'
+  | 'LOVER_REVEAL_ACKNOWLEDGED'
+  | 'LOVER_HEARTBREAK_CREATED'
+  | 'CUPID_OBJECTIVE_FALLBACK'
   | 'PLAYER_DEATH'
   | 'MODERATOR_OVERRIDE'
   | 'PHASE_CHANGED'
@@ -230,6 +251,7 @@ export interface RoomState {
   witchCheckpoint?: PersistedWitchCheckpoint | null
   dayVote: DayVoteState | null
   factionTransitions?: FactionTransitionState
+  cupidLovers?: CupidLoverState
   journal: JournalEvent[]
 }
 
@@ -247,6 +269,12 @@ export type RoomCommand =
   | { type: 'SUBMIT_SEER_INSPECTION'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'ACKNOWLEDGE_SEER_RESULT'; playerId: PlayerId }
   | { type: 'SUBMIT_PROTECTOR_TARGET'; playerId: PlayerId; targetId: PlayerId }
+  | {
+      type: 'SUBMIT_CUPID_PAIRING'
+      playerId: PlayerId
+      targetIds: [PlayerId, PlayerId]
+    }
+  | { type: 'ACKNOWLEDGE_LOVER_REVEAL'; playerId: PlayerId }
   | {
       type: 'CAST_HUNTER_PRELOCK'
       playerId: PlayerId

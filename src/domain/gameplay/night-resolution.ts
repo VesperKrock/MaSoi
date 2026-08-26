@@ -30,8 +30,11 @@ export interface NightEffectInput {
   sourceRoleId?: RoleId
   category: NightEffectCategory
   targetPlayerId: string
+  sourcePlayerId?: string
+  coupleId?: string
   lethal: boolean
   protectorBlockable: boolean
+  witchInteractable?: boolean
   conversion?: NightEffectConversion
   activationCondition?: NightEffectActivationCondition
 }

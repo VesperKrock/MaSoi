@@ -31,7 +31,10 @@
     "qa:d2-remote": "node scripts/day-cycle-supabase-qa.mjs --remote",
     "qa:d2-touch": "node scripts/zero-scroll-qa.mjs day-vote hunter-revenge hunter-pending",
     "qa:faction-local": "node scripts/faction-transition-supabase-qa.mjs --local",
-    "qa:faction-remote": "node scripts/faction-transition-supabase-qa.mjs --remote"
+    "qa:faction-remote": "node scripts/faction-transition-supabase-qa.mjs --remote",
+    "qa:lovers-local": "node scripts/cupid-lovers-supabase-qa.mjs --local",
+    "qa:lovers-remote": "node scripts/cupid-lovers-supabase-qa.mjs --remote",
+    "qa:lovers-touch": "node scripts/zero-scroll-qa.mjs cupid-action lover-reveal"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

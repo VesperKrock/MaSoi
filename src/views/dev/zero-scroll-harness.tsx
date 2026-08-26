@@ -143,6 +143,38 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
+  if (surface === 'cupid-action') {
+    return {
+      ...baseSnapshot,
+      roleIdentity: {
+        roleId: 'cupid',
+        displayName: 'Thần Tình Yêu',
+        factionMeaning: 'Dân Làng',
+        rulesText: 'Đêm đầu tiên, ghép đôi hai người chơi khác nhau.',
+        cardAsset: cardAssetUrl('Thần Tình Yêu.jpg'),
+      },
+      nightAction: {
+        id: 'qa-cupid-action',
+        kind: 'CUPID_PAIRING',
+        roleId: 'cupid',
+        roleName: 'Thần Tình Yêu',
+        instructions: 'Chọn đúng hai người chơi để ghép đôi.',
+        mode: 'CUPID_PAIRING',
+        candidates: players.slice(1),
+        selectedTargetIds: [],
+        hasSelected: false,
+      },
+    }
+  }
+  if (surface === 'lover-reveal') {
+    return {
+      ...baseSnapshot,
+      loverRelationship: {
+        partner: players[1],
+        revealPending: true,
+      },
+    }
+  }
   if (surface === 'day-dead' || surface === 'day-living') {
     return {
       ...baseSnapshot,

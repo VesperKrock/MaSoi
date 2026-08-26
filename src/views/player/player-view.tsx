@@ -71,6 +71,11 @@ function RoleIdentityCard({
       <div className="role-identity-caption">
         <strong>{role.displayName}</strong>
         <span>Phe: {role.factionMeaning}</span>
+        {mode === 'RECHECK' && snapshot.loverRelationship && (
+          <small>
+            Người Yêu: {playerLabel(snapshot.loverRelationship.partner)}
+          </small>
+        )}
       </div>
       <button className="button primary full" onClick={close} data-required-control>
         {mode === 'REVEAL' ? 'Đã nhớ vai trò · Úp máy' : 'Đóng · Úp máy'}
@@ -291,9 +296,94 @@ function WitchDecisionView({
   )
 }
 
+function CupidPairingView({ snapshot, dispatch }: PlayerViewProps) {
+  const action = snapshot.nightAction
+  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(
+    action?.selectedTargetIds ?? [],
+  )
+  if (!action || action.mode !== 'CUPID_PAIRING') return null
+
+  const toggle = (targetId: string) => {
+    setSelectedTargetIds((current) =>
+      current.includes(targetId)
+        ? current.filter((entry) => entry !== targetId)
+        : current.length < 2
+          ? [...current, targetId]
+          : [current[1], targetId],
+    )
+  }
+
+  return (
+    <section className="player-action compact-action cupid-pairing-action">
+      <header>
+        <p className="eyebrow">ĐÊM 1 · GHÉP ĐÔI RIÊNG</p>
+        <h1>Chọn hai Người Yêu</h1>
+        <p>Chọn đúng hai người khác nhau. Vai trò và phe của họ không thay đổi.</p>
+      </header>
+      <div className="target-list">
+        {action.candidates.map((candidate) => (
+          <TargetButton
+            key={candidate.id}
+            seat={candidate.seat}
+            name={candidate.alias}
+            selected={selectedTargetIds.includes(candidate.id)}
+            onClick={() => toggle(candidate.id)}
+          />
+        ))}
+      </div>
+      <p className="witch-choice-summary">
+        Đã chọn: <strong>{selectedTargetIds.length} / 2</strong>
+      </p>
+      <button
+        className="button primary full action-confirm"
+        disabled={selectedTargetIds.length !== 2}
+        onClick={() =>
+          void dispatch({
+            type: 'SUBMIT_CUPID_PAIRING',
+            playerId: snapshot.self.id,
+            targetIds: [selectedTargetIds[0], selectedTargetIds[1]],
+          })
+        }
+        data-required-control
+      >
+        Xác nhận cặp đôi · Úp máy
+      </button>
+    </section>
+  )
+}
+
+function LoverRevealView({ snapshot, dispatch }: PlayerViewProps) {
+  const relationship = snapshot.loverRelationship
+  if (!relationship?.revealPending) return null
+  return (
+    <section className="player-center lover-reveal">
+      <p className="eyebrow">THÔNG TIN RIÊNG · NGƯỜI YÊU</p>
+      <div className="moon-mark" aria-hidden="true">♡</div>
+      <h1>{relationship.partner.alias}</h1>
+      <p>Ghế {String(relationship.partner.seat).padStart(2, '0')} là Người Yêu của bạn.</p>
+      <small>Không có thông tin vai trò hoặc phe được tiết lộ.</small>
+      <button
+        className="button primary full action-confirm"
+        onClick={() =>
+          void dispatch({
+            type: 'ACKNOWLEDGE_LOVER_REVEAL',
+            playerId: snapshot.self.id,
+          })
+        }
+        data-required-control
+      >
+        Đã nhớ · Úp máy
+      </button>
+    </section>
+  )
+}
+
 function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
   const action = snapshot.nightAction
   if (!action) return null
+  if (action.mode === 'CUPID_PAIRING') {
+    return <CupidPairingView snapshot={snapshot} dispatch={dispatch} />
+  }
   if (action.mode === 'WITCH_DECISION') {
     return (
       <WitchDecisionView
@@ -555,13 +645,15 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
         ? 'RECHECK'
         : snapshot.roleRevealPending
           ? 'REVEAL'
-          : snapshot.nightAction
-            ? 'NIGHT_ACTION'
-            : snapshot.dayVote?.hunterRevengeAction
-              ? 'HUNTER_REVENGE'
-              : snapshot.dayVote?.status === 'OPEN' && snapshot.self.alive
-                ? 'DAY_VOTE'
-                : 'NEUTRAL'
+          : snapshot.loverRelationship?.revealPending
+            ? 'LOVER_REVEAL'
+            : snapshot.nightAction
+              ? 'NIGHT_ACTION'
+              : snapshot.dayVote?.hunterRevengeAction
+                ? 'HUNTER_REVENGE'
+                : snapshot.dayVote?.status === 'OPEN' && snapshot.self.alive
+                  ? 'DAY_VOTE'
+                  : 'NEUTRAL'
 
   return (
     <main
@@ -585,6 +677,9 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
             mode="RECHECK"
             onClose={() => setRechecking(false)}
           />
+        )}
+        {activeSurface === 'LOVER_REVEAL' && (
+          <LoverRevealView snapshot={snapshot} dispatch={dispatch} />
         )}
         {activeSurface === 'NIGHT_ACTION' && (
           <NightActionView snapshot={snapshot} dispatch={dispatch} />

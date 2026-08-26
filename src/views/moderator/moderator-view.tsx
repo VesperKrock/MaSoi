@@ -342,6 +342,18 @@ function WolfActionPanel({
 }
 
 function ActionResult({ state, action }: { state: RoomState; action: NightAction }) {
+  if (action.cupid?.selectedTargetIds.length === 2) {
+    return (
+      <div className="action-summary">
+        <span>
+          Cặp Người Yêu · {playerName(state, action.cupid.selectedTargetIds[0])}
+          {' + '}
+          {playerName(state, action.cupid.selectedTargetIds[1])}
+        </span>
+      </div>
+    )
+  }
+
   if (action.seer) {
     return (
       <div className="final-target">
@@ -459,8 +471,15 @@ function WitchFinalizationPanel({ state, dispatch }: ModeratorViewProps) {
   const witchConfigured = state.config.nightRoleIds.includes('witch')
   const witchComplete =
     night.calls.find((call) => call.roleId === 'witch')?.status === 'COMPLETED'
+  const preWitchComplete = getPreWitchNightRoleIds(
+    state.config.nightRoleIds,
+  ).every(
+    (roleId) =>
+      night.calls.find((call) => call.roleId === roleId)?.status ===
+      'COMPLETED',
+  )
   const canFinalize =
-    resolutionReady && (!witchConfigured || witchComplete)
+    resolutionReady && preWitchComplete && (!witchConfigured || witchComplete)
 
   if (checkpoint) {
     return (
@@ -618,11 +637,39 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
                   <p>Đang chờ quyết định kết hợp trên điện thoại Phù Thủy.</p>
                 </div>
               )}
+              {isActive && action?.kind === 'CUPID_PAIRING' && (
+                <div className="action-monitor silent-call">
+                  <p>Đang chờ Thần Tình Yêu chọn riêng đúng hai Người Yêu.</p>
+                </div>
+              )}
               {action && <ActionResult state={state} action={action} />}
             </article>
           )
         })}
       </div>
+      {state.cupidLovers?.objective && (
+        <div className="night-resolution-summary resolved-resolution">
+          <div>
+            <p className="eyebrow">Quan hệ riêng · Quản trò</p>
+            {state.cupidLovers.couple ? (
+              <strong>
+                Người Yêu: {playerName(state, state.cupidLovers.couple.loverPlayerIds[0])}
+                {' + '}
+                {playerName(state, state.cupidLovers.couple.loverPlayerIds[1])}
+              </strong>
+            ) : (
+              <strong>Chưa có cặp Người Yêu.</strong>
+            )}
+            <small>
+              Mục tiêu Cupid · {state.cupidLovers.objective.status === 'ACTIVE'
+                ? 'đang hoạt động'
+                : state.cupidLovers.objective.status === 'FALLBACK_VILLAGE'
+                  ? 'đã về phía Dân Làng'
+                  : 'chưa xác lập'}
+            </small>
+          </div>
+        </div>
+      )}
       <NightResolutionPanel state={state} dispatch={dispatch} />
       <WitchFinalizationPanel state={state} dispatch={dispatch} />
     </section>

@@ -28,6 +28,14 @@ import {
 } from '../gameplay/faction-transitions'
 import { resolveNightEffectsWithHunter } from '../gameplay/hunter-night'
 import {
+  acknowledgeLoverReveal,
+  createInitialCupidLoverState,
+  fallbackCupidWithoutPair,
+  pairLovers,
+  reconcileCupidObjective,
+  stabilizeDeathConsequences,
+} from '../gameplay/lovers'
+import {
   finalizeWitchCheckpoint,
   getWitchCapabilities,
   validateWitchDecision,
@@ -193,6 +201,7 @@ export function createProductRoom(
     witchCheckpoint: null,
     dayVote: null,
     factionTransitions: createInitialFactionTransitionState([]),
+    cupidLovers: createInitialCupidLoverState([], environment.now()),
     journal: [],
   }
   appendEvent(state, environment, 'ROOM_CREATED', {
@@ -250,6 +259,10 @@ export function createDemoRoom(
     witchCheckpoint: null,
     dayVote: null,
     factionTransitions: createInitialFactionTransitionState(roleAssignments),
+    cupidLovers: createInitialCupidLoverState(
+      roleAssignments,
+      environment.now(),
+    ),
     journal: [],
   }
 
@@ -354,6 +367,10 @@ function lockAndAssignRoles(
   state.factionTransitions = createInitialFactionTransitionState(
     state.roleAssignments,
   )
+  state.cupidLovers = createInitialCupidLoverState(
+    state.roleAssignments,
+    environment.now(),
+  )
   state.roleRevealConfirmedPlayerIds = []
   state.lifecycle = 'ROLE_REVEAL'
   appendEvent(state, environment, 'ROOM_LOCKED', {
@@ -394,6 +411,82 @@ function applyFactionReconciliation(
           : event.reason,
     })
   }
+}
+
+function applyCupidObjectiveReconciliation(
+  state: RoomState,
+  environment: GameEnvironment,
+): void {
+  if (!state.cupidLovers) return
+  const previous = state.cupidLovers.objective?.status
+  const next = reconcileCupidObjective(
+    state.cupidLovers,
+    state.players.filter((player) => player.alive).map((player) => player.id),
+    environment.now(),
+  )
+  state.cupidLovers = next
+  if (
+    previous !== 'FALLBACK_VILLAGE' &&
+    next.objective?.status === 'FALLBACK_VILLAGE'
+  ) {
+    appendEvent(state, environment, 'CUPID_OBJECTIVE_FALLBACK', {
+      actorPlayerId: next.objective.cupidPlayerId,
+      actorRoleId: 'cupid',
+      resolution: next.objective.reason,
+      metadata: { originalRoleUnchanged: true },
+    })
+  }
+}
+
+function applyDayHeartbreakConsequences(
+  state: RoomState,
+  initialFinalDeaths: readonly { playerId: PlayerId; sourceEffectIds: string[] }[],
+  livingPlayerIdsBefore: readonly PlayerId[],
+  environment: GameEnvironment,
+): void {
+  if (!state.dayVote) fail('Thiếu trạng thái bỏ phiếu ban ngày để ổn định hậu quả.')
+  const initialDeathIds = new Set(
+    initialFinalDeaths.map((death) => death.playerId),
+  )
+  const stabilized = stabilizeDeathConsequences({
+    initialFinalDeaths,
+    livingPlayerIdsBefore,
+    couple: state.cupidLovers?.couple ?? null,
+    nextEffectId: environment.nextId,
+  })
+  state.dayVote.consequenceEffects ??= []
+  for (const effect of stabilized.heartbreakEffects) {
+    state.dayVote.consequenceEffects.push(effect)
+    const target = state.players.find(
+      (player) => player.id === effect.targetPlayerId,
+    )
+    if (target) target.alive = false
+    appendEvent(state, environment, 'LOVER_HEARTBREAK_CREATED', {
+      actorPlayerId: effect.sourcePlayerId,
+      targetPlayerId: effect.targetPlayerId,
+      resolution: 'FINAL_DAY_CONSEQUENCE',
+      metadata: {
+        effectId: effect.id,
+        coupleId: effect.coupleId,
+        sourceType: effect.sourceType,
+        protectorBlockable: false,
+        witchInteractable: false,
+      },
+    })
+    appendEvent(state, environment, 'PLAYER_DEATH', {
+      actorPlayerId: effect.sourcePlayerId,
+      targetPlayerId: effect.targetPlayerId,
+      resolution: 'LOVER_HEARTBREAK',
+      metadata: { sourceEffectId: effect.id, publicRoleReveal: false },
+    })
+  }
+  for (const death of stabilized.finalDeaths) {
+    if (initialDeathIds.has(death.playerId)) continue
+    const target = state.players.find((player) => player.id === death.playerId)
+    if (target) target.alive = false
+  }
+  applyFactionReconciliation(state, 'AFTER_DEATH', environment)
+  applyCupidObjectiveReconciliation(state, environment)
 }
 
 function getActiveAction(state: RoomState): NightAction {
@@ -578,6 +671,24 @@ function callNightRole(
     }
   }
 
+  if (roleId === 'cupid') {
+    const cupidPlayerId = state.roleAssignments.find(
+      (assignment) => assignment.roleId === 'cupid',
+    )?.playerId
+    if (!cupidPlayerId) fail('Không tìm thấy holder Thần Tình Yêu đã được chia vai.')
+    if (state.dayNumber !== 1 || state.cupidLovers?.couple) {
+      return
+    }
+    if (eligibleActorIds.length === 0) {
+      state.cupidLovers = fallbackCupidWithoutPair(
+        state.cupidLovers ?? createInitialCupidLoverState(state.roleAssignments),
+        cupidPlayerId,
+        environment.now(),
+      )
+      return
+    }
+  }
+
   // A dead role deliberately produces no player action, but the call remains
   // active until the Moderator confirms it. No public state identifies why.
   if (eligibleActorIds.length === 0 || definition.actionType === 'NONE') {
@@ -644,6 +755,10 @@ function callNightRole(
     wolf:
       definition.actionType === 'WOLF_VOTE'
         ? { round: 'INITIAL', initialTiedTargetIds: [] }
+        : undefined,
+    cupid:
+      definition.actionType === 'CUPID_PAIRING'
+        ? { selectedTargetIds: [] }
         : undefined,
     openedAt: environment.now(),
   }
@@ -925,6 +1040,73 @@ function submitProtectorTarget(
   submitTargetAction(state, playerId, targetId, environment)
 }
 
+function submitCupidPairing(
+  state: RoomState,
+  playerId: PlayerId,
+  targetIds: [PlayerId, PlayerId],
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (action.roleId !== 'cupid' || action.kind !== 'CUPID_PAIRING') {
+    fail('Đây không phải lượt ghép đôi của Thần Tình Yêu.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Thần Tình Yêu còn sống mới được ghép đôi.')
+  }
+  if (action.status !== 'OPEN' || action.confirmedActorIds.includes(playerId)) {
+    fail('Cặp đôi Đêm đầu tiên đã được xác nhận.')
+  }
+
+  state.cupidLovers = pairLovers({
+    state:
+      state.cupidLovers ??
+      createInitialCupidLoverState(state.roleAssignments, environment.now()),
+    coupleId: environment.nextId(),
+    cupidPlayerId: playerId,
+    targetPlayerIds: targetIds,
+    livingPlayerIds: state.players
+      .filter((player) => player.alive)
+      .map((player) => player.id),
+    nightNumber: state.dayNumber,
+    now: environment.now(),
+  })
+  action.cupid = { selectedTargetIds: [...targetIds] }
+  action.confirmedActorIds.push(playerId)
+  action.status = 'COMPLETED'
+  action.completedAt = environment.now()
+  appendEvent(state, environment, 'CUPID_PAIR_CREATED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'cupid',
+    resolution: 'PAIR_CREATED',
+    metadata: {
+      actionId: action.id,
+      coupleId: state.cupidLovers.couple?.id,
+      loverPlayerIds: [...targetIds],
+      private: true,
+    },
+  })
+  finishCall(state, 'cupid', environment)
+}
+
+function acknowledgePrivateLoverReveal(
+  state: RoomState,
+  playerId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const current = state.cupidLovers
+  if (!current?.couple?.loverPlayerIds.includes(playerId)) {
+    fail('Người chơi này không có thông tin Người Yêu riêng để xác nhận.')
+  }
+  const next = acknowledgeLoverReveal(current, playerId)
+  if (next === current) return
+  state.cupidLovers = next
+  appendEvent(state, environment, 'LOVER_REVEAL_ACKNOWLEDGED', {
+    actorPlayerId: playerId,
+    resolution: 'PRIVATE_PARTNER_REMEMBERED',
+    metadata: { coupleId: current.couple.id, private: true },
+  })
+}
+
 function resolveWolfVote(
   state: RoomState,
   atDeadline: boolean,
@@ -1054,6 +1236,9 @@ function completeNightCall(
   }
   if (roleId === 'hunter' && action?.status === 'OPEN') {
     fail('Thợ Săn còn sống phải khóa và xác nhận mục tiêu trên thiết bị riêng.')
+  }
+  if (roleId === 'cupid' && action?.status === 'OPEN') {
+    fail('Thần Tình Yêu còn sống trong Đêm 1 phải ghép đúng hai người.')
   }
   if (action?.kind === 'WOLF_VOTE' && action.status === 'OPEN') {
     fail('Hãy phân giải phiếu Ma Sói trước khi đóng lượt gọi.')
@@ -1302,6 +1487,17 @@ function finalizeNightCheckpoint(
     fail('Phải phân giải hiệu ứng đầu Đêm trước khi chốt tử vong.')
   }
 
+  const incompletePreWitchCalls = getPreWitchNightRoleIds(
+    state.config.nightRoleIds,
+  ).filter(
+    (roleId) =>
+      state.night?.calls.find((call) => call.roleId === roleId)?.status !==
+      'COMPLETED',
+  )
+  if (incompletePreWitchCalls.length > 0) {
+    fail('Phải hoàn tất tất cả nghi thức trước Phù Thủy trước khi chốt Đêm.')
+  }
+
   const witchConfigured = state.config.nightRoleIds.includes('witch')
   const witchCall = state.night.calls.find((call) => call.roleId === 'witch')
   if (witchConfigured && witchCall?.status !== 'COMPLETED') {
@@ -1314,7 +1510,7 @@ function finalizeNightCheckpoint(
     witchPlayerId !== null &&
     state.players.find((player) => player.id === witchPlayerId)?.alive === true
   const decision = state.night.actionsByRole.witch?.witch?.decision ?? null
-  const result = finalizeWitchCheckpoint({
+  const preliminaryResult = finalizeWitchCheckpoint({
     nightNumber: state.dayNumber,
     witchPlayerId,
     witchAliveBeforeNight,
@@ -1328,6 +1524,63 @@ function finalizeNightCheckpoint(
       ? environment.nextId()
       : undefined,
   })
+  const hunterEffect = state.nightResolution.effects.find(
+    (effect) => effect.sourceType === 'HUNTER_SHOT',
+  )
+  const suppressedEffectIds =
+    hunterEffect &&
+    decision?.resurrectionTargetId === hunterEffect.targetPlayerId &&
+    preliminaryResult.conditionalEffectStates.some(
+      (entry) =>
+        entry.effectId === hunterEffect.id && entry.status === 'ACTIVATED',
+    )
+      ? [hunterEffect.id]
+      : []
+  const stabilized = stabilizeDeathConsequences({
+    initialFinalDeaths: preliminaryResult.finalDeaths,
+    livingPlayerIdsBefore: state.players
+      .filter((player) => player.alive)
+      .map((player) => player.id),
+    couple: state.cupidLovers?.couple ?? null,
+    hunter:
+      hunterEffect?.activationCondition?.sourcePlayerId
+        ? {
+            hunterPlayerId: hunterEffect.activationCondition.sourcePlayerId,
+            targetPlayerId: hunterEffect.targetPlayerId,
+            effectId: hunterEffect.id,
+          }
+        : null,
+    suppressedEffectIds,
+    nextEffectId: environment.nextId,
+  })
+  const result = {
+    ...preliminaryResult,
+    finalDeaths: stabilized.finalDeaths,
+    conditionalEffectStates: preliminaryResult.conditionalEffectStates.map(
+      (entry) =>
+        entry.effectId === hunterEffect?.id && stabilized.hunterShotActivated
+          ? { ...entry, status: 'ACTIVATED' as const }
+          : entry,
+    ),
+  }
+  for (const heartbreak of stabilized.heartbreakEffects) {
+    state.nightResolution.effects.push({
+      ...heartbreak,
+      outcome: 'UNBLOCKED',
+    })
+    appendEvent(state, environment, 'LOVER_HEARTBREAK_CREATED', {
+      actorPlayerId: heartbreak.sourcePlayerId,
+      targetPlayerId: heartbreak.targetPlayerId,
+      resolution: 'FINAL_NIGHT_CONSEQUENCE',
+      metadata: {
+        effectId: heartbreak.id,
+        coupleId: heartbreak.coupleId,
+        sourceType: heartbreak.sourceType,
+        protectorBlockable: false,
+        witchInteractable: false,
+      },
+    })
+  }
   state.witchResources = result.resourcesAfter
   state.witchCheckpoint = {
     id: environment.nextId(),
@@ -1404,6 +1657,7 @@ function finalizeNightCheckpoint(
     })
   }
   applyFactionReconciliation(state, 'AFTER_DEATH', environment)
+  applyCupidObjectiveReconciliation(state, environment)
   appendEvent(state, environment, 'WITCH_CHECKPOINT_COMPLETED', {
     actorRoleId: witchConfigured ? 'witch' : undefined,
     resolution: 'FINALIZED',
@@ -1535,7 +1789,6 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
     const effect = createDayHangingEffect(environment.nextId(), targetId)
     state.dayVote.hangingEffect = effect
     target.alive = false
-    applyFactionReconciliation(state, 'AFTER_DEATH', environment)
     appendEvent(state, environment, 'DAY_HANGING_CREATED', {
       targetPlayerId: targetId,
       resolution: 'FINAL',
@@ -1550,6 +1803,12 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
       resolution: 'DAY_HANGING',
       metadata: { sourceEffectId: effect.id },
     })
+    applyDayHeartbreakConsequences(
+      state,
+      [{ playerId: targetId, sourceEffectIds: [effect.id] }],
+      livingIds,
+      environment,
+    )
     if (getRoleIdForPlayer(state, targetId) === 'hunter') {
       state.dayVote.hunterRevenge = {
         hunterPlayerId: targetId,
@@ -1582,6 +1841,9 @@ function submitHunterRevenge(
     fail('Phát bắn trả thù đã được giải quyết.')
   }
   if (targetId !== null) {
+    const livingPlayerIdsBefore = state.players
+      .filter((player) => player.alive)
+      .map((player) => player.id)
     const target = state.players.find((player) => player.id === targetId)
     if (!target?.alive || target.id === playerId) {
       fail('Mục tiêu trả thù không hợp lệ.')
@@ -1592,7 +1854,6 @@ function submitHunterRevenge(
       targetId,
     )
     target.alive = false
-    applyFactionReconciliation(state, 'AFTER_DEATH', environment)
     revenge.effect = effect
     appendEvent(state, environment, 'PLAYER_DEATH', {
       actorPlayerId: playerId,
@@ -1601,6 +1862,12 @@ function submitHunterRevenge(
       resolution: 'HUNTER_REVENGE_SHOT',
       metadata: { sourceEffectId: effect.id, protectorBlockable: false },
     })
+    applyDayHeartbreakConsequences(
+      state,
+      [{ playerId: targetId, sourceEffectIds: [effect.id] }],
+      livingPlayerIdsBefore,
+      environment,
+    )
   }
   revenge.status = 'RESOLVED'
   revenge.targetPlayerId = targetId
@@ -1733,6 +2000,17 @@ export function applyRoomCommand(
         command.targetId,
         environment,
       )
+      break
+    case 'SUBMIT_CUPID_PAIRING':
+      submitCupidPairing(
+        state,
+        command.playerId,
+        command.targetIds,
+        environment,
+      )
+      break
+    case 'ACKNOWLEDGE_LOVER_REVEAL':
+      acknowledgePrivateLoverReveal(state, command.playerId, environment)
       break
     case 'CAST_HUNTER_PRELOCK':
       castHunterPrelock(

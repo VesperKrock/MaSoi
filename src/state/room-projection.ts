@@ -12,6 +12,7 @@ import type {
   RoomState,
 } from '../domain/game/types'
 import { roleDefinitions } from '../domain/roles/role-definitions'
+import { getLoverPartnerId } from '../domain/gameplay/lovers'
 import {
   cardAssetUrl,
   classicRoleById,
@@ -45,6 +46,7 @@ export interface PlayerActionSnapshot {
     | 'PROTECTOR_SELECT'
     | 'HUNTER_PRELOCK'
     | 'WITCH_DECISION'
+    | 'CUPID_PAIRING'
   resurrectionCandidates?: Player[]
   poisonCandidates?: Player[]
   resurrectionAvailable?: boolean
@@ -52,6 +54,7 @@ export interface PlayerActionSnapshot {
   witchAttackedThisNight?: boolean
   inspectedTarget?: Player
   seerResult?: 'WOLF' | 'NON_WOLF'
+  selectedTargetIds?: PlayerId[]
 }
 
 export interface PlayerRoomSnapshot {
@@ -73,6 +76,13 @@ export interface PlayerRoomSnapshot {
     cardAsset: string
   }
   roleRevealPending: boolean
+  loverRelationship?: {
+    partner: Player
+    revealPending: boolean
+  }
+  cupidPair?: {
+    lovers: [Player, Player]
+  }
   nightAction?: PlayerActionSnapshot
   dayVote?: {
     status: 'OPEN' | 'CLOSED'
@@ -163,6 +173,8 @@ function projectNightAction(
               ? 'HUNTER_PRELOCK'
               : action.roleId === 'witch'
                 ? 'WITCH_DECISION'
+                : action.roleId === 'cupid'
+                  ? 'CUPID_PAIRING'
                 : undefined,
     resurrectionCandidates: action.witch?.resurrectionCandidateIds.map(
       (targetId) => playerById(state, targetId),
@@ -177,6 +189,7 @@ function projectNightAction(
       ? playerById(state, action.seer.targetId)
       : undefined,
     seerResult: action.seer?.result,
+    selectedTargetIds: action.cupid?.selectedTargetIds,
   }
 }
 
@@ -238,6 +251,11 @@ export function projectRoomSnapshot(
       ? dayVote.result.targetIds[0]
       : undefined
   const revengeTargetId = dayVote?.hunterRevenge?.targetPlayerId
+  const loverPartnerId = getLoverPartnerId(state.cupidLovers, self.id)
+  const cupidPair =
+    roleAssignment?.roleId === 'cupid' && state.cupidLovers?.couple
+      ? state.cupidLovers.couple.loverPlayerIds
+      : null
 
   return {
     audience: 'PLAYER',
@@ -261,6 +279,24 @@ export function projectRoomSnapshot(
           }
         : undefined,
     roleRevealPending,
+    loverRelationship: loverPartnerId
+      ? {
+          partner: playerById(state, loverPartnerId),
+          revealPending: !(
+            state.cupidLovers?.loverRevealAcknowledgedPlayerIds.includes(
+              self.id,
+            ) ?? false
+          ),
+        }
+      : undefined,
+    cupidPair: cupidPair
+      ? {
+          lovers: [
+            playerById(state, cupidPair[0]),
+            playerById(state, cupidPair[1]),
+          ],
+        }
+      : undefined,
     nightAction: projectNightAction(state, self),
     dayVote:
       dayVote
