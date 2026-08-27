@@ -125,7 +125,7 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       roleRevealPending: true,
     }
   }
-  if (surface === 'action') {
+  if (surface === 'action' || surface === 'wolf-pack-action') {
     return {
       ...baseSnapshot,
       nightAction: {
@@ -133,12 +133,20 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
         kind: 'WOLF_VOTE',
         roleId: 'werewolf',
         roleName: 'Ma Sói',
-        instructions: 'Chọn một người hoặc không chọn. Phiếu trắng là trung lập.',
+        instructions: 'Chọn một mục tiêu hợp lệ để Ma Sói tấn công, rồi xác nhận.',
         round: 'REVOTE',
         deadlineAt: Date.now() + 10_000,
         candidates: players.slice(1),
         currentTargetId: undefined,
         hasSelected: false,
+        wolfTeammateBallots:
+          surface === 'wolf-pack-action'
+            ? [
+                { voter: players[1], targetId: players[5].id },
+                { voter: players[2], targetId: players[5].id },
+                { voter: players[3], targetId: players[9].id },
+              ]
+            : undefined,
       },
     }
   }

@@ -1790,6 +1790,18 @@ body:has(.zero-scroll-surface) {
   white-space: nowrap;
 }
 
+.compact-action .wolf-peer-marker {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: var(--gold);
+  font-size: clamp(9px, 2.6vw, 10px);
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .action-confirm {
   min-height: 44px;
 }

@@ -51,7 +51,7 @@ export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
     targetRule: 'LIVING_NON_WOLF',
     nightStage: 'PRE_WITCH',
     description: 'Thức dậy cùng bầy sói và chọn một nạn nhân.',
-    instructions: 'Chọn một người hoặc không chọn. Phiếu trắng là trung lập.',
+    instructions: 'Chọn một mục tiêu hợp lệ để Ma Sói tấn công, rồi xác nhận.',
   },
   seer: {
     id: 'seer',

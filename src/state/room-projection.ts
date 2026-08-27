@@ -66,6 +66,10 @@ export interface PlayerActionSnapshot {
   inspectedTarget?: Player
   seerResult?: 'WOLF' | 'NON_WOLF'
   selectedTargetIds?: PlayerId[]
+  wolfTeammateBallots?: Array<{
+    voter: Player
+    targetId: PlayerId
+  }>
 }
 
 export interface PlayerRoomSnapshot {
@@ -209,6 +213,15 @@ function projectNightAction(
       : undefined,
     seerResult: action.seer?.result,
     selectedTargetIds: action.cupid?.selectedTargetIds,
+    wolfTeammateBallots:
+      action.kind === 'WOLF_VOTE'
+        ? action.confirmedActorIds.flatMap((voterId) => {
+            const targetId = action.selections[voterId]
+            return voterId !== player.id && typeof targetId === 'string'
+              ? [{ voter: playerById(state, voterId), targetId }]
+              : []
+          })
+        : undefined,
   }
 }
 

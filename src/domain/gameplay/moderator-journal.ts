@@ -97,7 +97,7 @@ function factLines(fact: ModeratorJournalFact): string[] {
         ? [fact.random
             ? `Phiếu Sói hòa → hệ thống chọn ngẫu nhiên ${target}.`
             : `Ma Sói chọn ${target}.`]
-        : ['Ma Sói không chọn mục tiêu.']
+        : []
     case 'PROTECTOR_INTENT':
       return [`Bảo Vệ bảo vệ ${target}.`]
     case 'SEER_INSPECTION':

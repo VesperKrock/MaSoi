@@ -140,6 +140,7 @@ const serverMessages: Record<string, string> = {
   INVALID_TARGET: 'Mục tiêu không hợp lệ cho hành động hiện tại.',
   SAME_PROTECTOR_TARGET: 'Bảo Vệ không thể chọn cùng mục tiêu hai đêm liên tiếp.',
   WOLF_NO_BITE_CAPABLE_MEMBER: 'Không còn Ma Sói sống để tạo mục tiêu tấn công.',
+  WOLF_TARGET_REQUIRED: 'Ma Sói phải chọn một mục tiêu hợp lệ trước khi xác nhận.',
   WOLF_ROUND_NOT_READY: 'Chưa đủ phiếu Ma Sói đã xác nhận.',
   REVOTE_NOT_READY: 'Lượt chọn lại chưa thể phân giải.',
   REVOTE_EXPIRED: 'Lượt chọn lại đã hết thời gian.',
@@ -923,6 +924,21 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
     poisonAvailable: value.poisonAvailable === true,
     witchAttackedThisNight: value.witchAttackedThisNight === true,
     selectedTargetIds: readStringArray(value.selectedTargetIds ?? []),
+    wolfTeammateBallots: Array.isArray(value.wolfTeammateBallots)
+      ? value.wolfTeammateBallots.map((ballot) => {
+          if (
+            !isRecord(ballot) ||
+            !isRecord(ballot.voter) ||
+            typeof ballot.targetId !== 'string'
+          ) {
+            throw new Error('BACKEND_UNAVAILABLE')
+          }
+          return {
+            voter: readRemotePlayer(ballot.voter),
+            targetId: ballot.targetId,
+          }
+        })
+      : undefined,
   }
 }
 

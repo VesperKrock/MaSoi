@@ -22,7 +22,7 @@ function recordingRandom(index = 0): {
   }
 }
 
-describe('wolf resolver — abstain is neutral', () => {
+describe('wolf resolver — mandatory target', () => {
   it('resolves a single voter target without random selection', () => {
     const { random, pools } = recordingRandom()
     const resolution = resolveInitialWolfVote({
@@ -40,34 +40,25 @@ describe('wolf resolver — abstain is neutral', () => {
     })
   })
 
-  it('treats a single voter abstention as all-abstain, not opposition', () => {
+  it('rejects zero valid ballots instead of inventing a no-kill or random target', () => {
     const { random, pools } = recordingRandom(1)
-    const resolution = resolveInitialWolfVote({
+    expect(() => resolveInitialWolfVote({
       policy: 'RANDOM_ON_TIE',
       actorIds: ['wolf-a'],
       eligibleTargetIds: ['chau', 'minh'],
       votes: { 'wolf-a': null },
       random,
-    })
-
-    expect(pools).toEqual([['chau', 'minh']])
-    expect(resolution).toEqual({
-      status: 'RESOLVED',
-      result: {
-        targetId: 'minh',
-        random: true,
-        reason: 'ALL_ABSTAIN_RANDOM',
-      },
-    })
+    })).toThrow('WOLF_TARGET_REQUIRED')
+    expect(pools).toEqual([])
   })
 
-  it('selects the only positive target when another wolf abstains', () => {
+  it('selects the only confirmed target when a teammate has not submitted', () => {
     const { random } = recordingRandom()
     const resolution = resolveInitialWolfVote({
       policy: 'RANDOM_ON_TIE',
       actorIds: ['wolf-a', 'wolf-b'],
       eligibleTargetIds: ['chau', 'minh'],
-      votes: { 'wolf-a': 'chau', 'wolf-b': null },
+      votes: { 'wolf-a': 'chau' },
       random,
     })
 
@@ -77,13 +68,13 @@ describe('wolf resolver — abstain is neutral', () => {
     })
   })
 
-  it('keeps a two-vote majority with a third wolf abstaining', () => {
+  it('keeps a two-vote majority with a third wolf missing', () => {
     const { random } = recordingRandom()
     const resolution = resolveInitialWolfVote({
       policy: 'REVOTE_10S',
       actorIds: ['wolf-a', 'wolf-b', 'wolf-c'],
       eligibleTargetIds: ['chau', 'minh'],
-      votes: { 'wolf-a': 'chau', 'wolf-b': 'chau', 'wolf-c': null },
+      votes: { 'wolf-a': 'chau', 'wolf-b': 'chau' },
       random,
     })
 
@@ -166,25 +157,16 @@ describe('RANDOM_ON_TIE', () => {
     })
   })
 
-  it('randomizes among all eligible targets only when everyone abstains', () => {
+  it('rejects an empty ballot set', () => {
     const { random, pools } = recordingRandom(1)
-    const resolution = resolveInitialWolfVote({
+    expect(() => resolveInitialWolfVote({
       policy: 'RANDOM_ON_TIE',
       actorIds: ['wolf-a', 'wolf-b'],
       eligibleTargetIds: ['chau', 'minh', 'lan'],
-      votes: { 'wolf-a': null, 'wolf-b': null },
+      votes: {},
       random,
-    })
-
-    expect(pools).toEqual([['chau', 'minh', 'lan']])
-    expect(resolution).toEqual({
-      status: 'RESOLVED',
-      result: {
-        targetId: 'minh',
-        random: true,
-        reason: 'ALL_ABSTAIN_RANDOM',
-      },
-    })
+    })).toThrow('WOLF_TARGET_REQUIRED')
+    expect(pools).toEqual([])
   })
 })
 
@@ -205,12 +187,12 @@ describe('REVOTE_10S', () => {
     })
   })
 
-  it('selects one positive revote target when another wolf abstains', () => {
+  it('selects one positive revote target when another wolf is missing', () => {
     const { random } = recordingRandom()
     const result = resolveWolfRevote({
       actorIds: ['wolf-a', 'wolf-b'],
       initialTiedTargetIds: ['chau', 'minh'],
-      votes: { 'wolf-a': 'chau', 'wolf-b': null },
+      votes: { 'wolf-a': 'chau' },
       random,
     })
 
@@ -243,20 +225,14 @@ describe('REVOTE_10S', () => {
     })
   })
 
-  it('falls back to the initial tied set when every wolf abstains', () => {
+  it('rejects a revote with zero valid ballots', () => {
     const { random, pools } = recordingRandom(1)
-    const result = resolveWolfRevote({
+    expect(() => resolveWolfRevote({
       actorIds: ['wolf-a', 'wolf-b'],
       initialTiedTargetIds: ['chau', 'minh'],
-      votes: { 'wolf-a': null, 'wolf-b': null },
+      votes: {},
       random,
-    })
-
-    expect(pools).toEqual([['chau', 'minh']])
-    expect(result).toEqual({
-      targetId: 'minh',
-      random: true,
-      reason: 'REVOTE_ALL_ABSTAIN_RANDOM',
-    })
+    })).toThrow('WOLF_TARGET_REQUIRED')
+    expect(pools).toEqual([])
   })
 })

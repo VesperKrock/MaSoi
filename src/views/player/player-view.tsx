@@ -167,6 +167,7 @@ function TargetButton({
   onClick,
   total,
   disabled = false,
+  peerNames,
 }: {
   seat: number | string
   name: string
@@ -174,6 +175,7 @@ function TargetButton({
   onClick: () => void
   total?: number
   disabled?: boolean
+  peerNames?: string[]
 }) {
   return (
     <button
@@ -185,6 +187,16 @@ function TargetButton({
     >
       <span>{typeof seat === 'number' ? String(seat).padStart(2, '0') : seat}</span>
       <strong>{name}</strong>
+      {peerNames && peerNames.length > 0 && (
+        <small
+          className="wolf-peer-marker"
+          title={peerNames.join(', ')}
+          aria-label={`Ma Sói đã chọn: ${peerNames.join(', ')}`}
+        >
+          🐺 {peerNames[0]}
+          {peerNames.length > 1 ? ` · +${peerNames.length - 1}` : ''}
+        </small>
+      )}
       {total !== undefined && <em className="target-total">{total}</em>}
     </button>
   )
@@ -493,7 +505,7 @@ function NightActionView({ snapshot, dispatch }: PlayerGameplayProps) {
     )
   }
   const choose = (targetId: string | null) => {
-    if (action.kind === 'WOLF_VOTE') {
+    if (action.kind === 'WOLF_VOTE' && targetId) {
       void dispatch({
         type: 'CAST_WOLF_VOTE',
         playerId: snapshot.self.id,
@@ -557,28 +569,28 @@ function NightActionView({ snapshot, dispatch }: PlayerGameplayProps) {
         <p>{action.instructions}</p>
       </header>
       <div className="target-list">
-        {action.candidates.map((candidate) => (
-          <TargetButton
-            key={candidate.id}
-            seat={candidate.seat}
-            name={candidate.alias}
-            selected={action.currentTargetId === candidate.id}
-            onClick={() => choose(candidate.id)}
-          />
-        ))}
-        {action.kind === 'WOLF_VOTE' && (
-          <TargetButton
-            seat="—"
-            name="Không chọn"
-            selected={action.hasSelected && action.currentTargetId === null}
-            onClick={() => choose(null)}
-          />
-        )}
+        {action.candidates.map((candidate) => {
+          const peerNames = action.wolfTeammateBallots
+            ?.filter((ballot) => ballot.targetId === candidate.id)
+            .map((ballot) => ballot.voter.alias)
+          return (
+            <TargetButton
+              key={candidate.id}
+              seat={candidate.seat}
+              name={candidate.alias}
+              selected={action.currentTargetId === candidate.id}
+              onClick={() => choose(candidate.id)}
+              peerNames={peerNames}
+            />
+          )
+        })}
       </div>
       {action.kind === 'WOLF_VOTE' && (
         <button
           className="button primary full action-confirm"
-          disabled={!action.hasSelected}
+          disabled={
+            !action.hasSelected || typeof action.currentTargetId !== 'string'
+          }
           onClick={() =>
             dispatch({
               type: 'CONFIRM_NIGHT_ACTION',

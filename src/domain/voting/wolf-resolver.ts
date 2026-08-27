@@ -68,21 +68,17 @@ export function resolveInitialWolfVote(input: {
   }
 
   if (analysis.leaders.length === 0) {
-    return {
-      status: 'RESOLVED',
-      result:
-        input.eligibleTargetIds.length === 0
-          ? {
-              targetId: null,
-              random: false,
-              reason: 'NO_ELIGIBLE_TARGET',
-            }
-          : {
-              targetId: input.random.pick(input.eligibleTargetIds),
-              random: true,
-              reason: 'ALL_ABSTAIN_RANDOM',
-            },
+    if (input.eligibleTargetIds.length === 0) {
+      return {
+        status: 'RESOLVED',
+        result: {
+          targetId: null,
+          random: false,
+          reason: 'NO_ELIGIBLE_TARGET',
+        },
+      }
     }
+    throw new Error('WOLF_TARGET_REQUIRED')
   }
 
   if (input.policy === 'REVOTE_10S') {
@@ -123,17 +119,14 @@ export function resolveWolfRevote(input: {
   }
 
   if (analysis.leaders.length === 0) {
-    return input.initialTiedTargetIds.length === 0
-      ? {
-          targetId: null,
-          random: false,
-          reason: 'NO_ELIGIBLE_TARGET',
-        }
-      : {
-          targetId: input.random.pick(input.initialTiedTargetIds),
-          random: true,
-          reason: 'REVOTE_ALL_ABSTAIN_RANDOM',
-        }
+    if (input.initialTiedTargetIds.length === 0) {
+      return {
+        targetId: null,
+        random: false,
+        reason: 'NO_ELIGIBLE_TARGET',
+      }
+    }
+    throw new Error('WOLF_TARGET_REQUIRED')
   }
 
   return {

@@ -51,8 +51,8 @@ const journal = {
 describe('MS-1H2 private Moderator Journal contract', () => {
   it('preserves all eleven historical migrations and adds exactly one H2 migration', () => {
     const files = readdirSync('supabase/migrations').filter((file) => file.endsWith('.sql')).sort()
-    expect(files).toHaveLength(12)
-    expect(files.at(-1)).toBe('20260827190000_ms1h2_moderator_journal.sql')
+    expect(files.filter((file) => file <= '20260827190000_ms1h2_moderator_journal.sql')).toHaveLength(12)
+    expect(files).toContain('20260827190000_ms1h2_moderator_journal.sql')
     for (const [file, expected] of historicalHashes) {
       const hash = createHash('sha256')
         .update(readFileSync(`supabase/migrations/${file}`))

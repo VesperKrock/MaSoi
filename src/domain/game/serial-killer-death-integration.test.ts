@@ -44,12 +44,14 @@ function assign(state: RoomState, roles: RoleId[]) {
   )
 }
 
-function callWolfNobody(state: RoomState, env: GameEnvironment) {
+function callWolfWithTarget(state: RoomState, env: GameEnvironment) {
   let next = run(state, env, { type: 'CALL_NIGHT_ROLE', roleId: 'werewolf' })
+  const targetId = next.night?.actionsByRole.werewolf?.eligibleTargetIds[0]
+  if (!targetId) throw new Error('Expected a legal Wolf target')
   next = run(next, env, {
     type: 'CAST_WOLF_VOTE',
     playerId: 'player-1',
-    targetId: null,
+    targetId,
   })
   next = run(next, env, {
     type: 'CONFIRM_NIGHT_ACTION',
@@ -94,7 +96,7 @@ describe('MS-1G1 existing death-pipeline integrations', () => {
     state.config.nightRoleIds = ['werewolf', 'serial-killer', 'witch']
     state.dayNumber = 2
     state = run(state, time.value, { type: 'START_NIGHT' })
-    state = callWolfNobody(state, time.value)
+    state = callWolfWithTarget(state, time.value)
     state = callSerialKiller(state, time.value, null)
     state = run(state, time.value, { type: 'RESOLVE_NIGHT_EFFECTS' })
     state = run(state, time.value, { type: 'CALL_NIGHT_ROLE', roleId: 'witch' })

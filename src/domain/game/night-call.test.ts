@@ -35,7 +35,7 @@ function command(
 function completeWolfCall(
   state: RoomState,
   environment: GameEnvironment,
-  targetId: PlayerId | null = null,
+  targetId?: PlayerId,
 ) {
   let next = command(state, environment, {
     type: 'CALL_NIGHT_ROLE',
@@ -43,12 +43,14 @@ function completeWolfCall(
   })
   const action = next.night?.actionsByRole.werewolf
   if (!action) throw new Error('Expected a living wolf action')
+  const resolvedTargetId = targetId ?? action.eligibleTargetIds[0]
+  if (!resolvedTargetId) throw new Error('Expected a legal Wolf target')
 
   for (const actorId of action.eligibleActorIds) {
     next = command(next, environment, {
       type: 'CAST_WOLF_VOTE',
       playerId: actorId,
-      targetId,
+      targetId: resolvedTargetId,
     })
     next = command(next, environment, {
       type: 'CONFIRM_NIGHT_ACTION',

@@ -271,7 +271,7 @@ export type RoomCommand =
   | { type: 'CONFIRM_ROLE_REVEAL'; playerId: PlayerId }
   | { type: 'START_NIGHT' }
   | { type: 'CALL_NIGHT_ROLE'; roleId: RoleId }
-  | { type: 'CAST_WOLF_VOTE'; playerId: PlayerId; targetId: PlayerId | null }
+  | { type: 'CAST_WOLF_VOTE'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'CONFIRM_NIGHT_ACTION'; playerId: PlayerId }
   | { type: 'SUBMIT_TARGET_ACTION'; playerId: PlayerId; targetId: PlayerId }
   | { type: 'SUBMIT_SEER_INSPECTION'; playerId: PlayerId; targetId: PlayerId }

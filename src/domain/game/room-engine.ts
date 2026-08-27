@@ -839,7 +839,7 @@ function callNightRole(
 function castWolfVote(
   state: RoomState,
   playerId: PlayerId,
-  targetId: PlayerId | null,
+  targetId: PlayerId,
   environment: GameEnvironment,
 ): void {
   const action = getActiveAction(state)
@@ -852,7 +852,7 @@ function castWolfVote(
   if (action.confirmedActorIds.includes(playerId)) {
     fail('Phiếu đã được xác nhận và màn hình đã đóng.')
   }
-  if (targetId !== null && !action.eligibleTargetIds.includes(targetId)) {
+  if (!targetId || !action.eligibleTargetIds.includes(targetId)) {
     fail('Mục tiêu không hợp lệ cho lượt Ma Sói.')
   }
 
@@ -860,16 +860,12 @@ function castWolfVote(
   appendEvent(
     state,
     environment,
-    action.wolf.round === 'REVOTE'
-      ? 'WOLF_REVOTE_CHANGED'
-      : targetId === null
-        ? 'WOLF_ABSTAIN'
-        : 'WOLF_VOTE',
+    action.wolf.round === 'REVOTE' ? 'WOLF_REVOTE_CHANGED' : 'WOLF_VOTE',
     {
       actorPlayerId: playerId,
       actorRoleId: 'werewolf',
-      targetPlayerId: targetId ?? undefined,
-      metadata: { round: action.wolf.round, abstain: targetId === null },
+      targetPlayerId: targetId,
+      metadata: { round: action.wolf.round },
     },
   )
 }
@@ -886,19 +882,19 @@ function confirmNightAction(
   if (!action.eligibleActorIds.includes(playerId)) {
     fail('Người chơi không thuộc lượt hành động này.')
   }
-  if (!Object.prototype.hasOwnProperty.call(action.selections, playerId)) {
-    fail('Hãy chọn mục tiêu hoặc chọn không bỏ phiếu trước.')
+  const targetId = action.selections[playerId]
+  if (typeof targetId !== 'string' || !action.eligibleTargetIds.includes(targetId)) {
+    fail('WOLF_TARGET_REQUIRED')
   }
   if (!action.confirmedActorIds.includes(playerId)) {
     action.confirmedActorIds.push(playerId)
     appendEvent(state, environment, 'ROLE_ACTION_SUBMITTED', {
       actorPlayerId: playerId,
       actorRoleId: action.roleId,
-      targetPlayerId: action.selections[playerId] ?? undefined,
+      targetPlayerId: targetId,
       metadata: {
         actionId: action.id,
         round: action.wolf?.round,
-        abstain: action.selections[playerId] === null,
       },
     })
   }
@@ -1256,13 +1252,22 @@ function resolveWolfVote(
     fail('Không có lượt Ma Sói để phân giải.')
   }
 
+  const confirmedVotes = Object.fromEntries(
+    action.confirmedActorIds.flatMap((actorId) => {
+      const targetId = action.selections[actorId]
+      return typeof targetId === 'string' && action.eligibleTargetIds.includes(targetId)
+        ? [[actorId, targetId]]
+        : []
+    }),
+  ) as Record<PlayerId, PlayerId>
+  if (Object.keys(confirmedVotes).length === 0) {
+    fail('WOLF_TARGET_REQUIRED')
+  }
+
   if (action.wolf.round === 'INITIAL') {
-    if (!allActorsConfirmed(action)) {
-      fail('Chưa đủ Ma Sói xác nhận lựa chọn.')
-    }
     const resolution = resolveInitialWolfVote({
       policy: state.config.wolfPolicy,
-      votes: action.selections,
+      votes: confirmedVotes,
       actorIds: action.eligibleActorIds,
       eligibleTargetIds: action.eligibleTargetIds,
       random: environment.random,
@@ -1300,16 +1305,14 @@ function resolveWolfVote(
       })
     }
     const initialAnalysis = analyzeWolfVotes(
-      action.selections,
+      confirmedVotes,
       action.eligibleActorIds,
       action.eligibleTargetIds,
     )
     const randomCandidateIds =
       resolution.result.reason === 'TIED_TOP_RANDOM'
         ? initialAnalysis.leaders
-        : resolution.result.reason === 'ALL_ABSTAIN_RANDOM'
-          ? action.eligibleTargetIds
-          : []
+        : []
     finalizeWolfAction(
       state,
       action,
@@ -1324,12 +1327,17 @@ function resolveWolfVote(
     atDeadline &&
     action.wolf.deadlineAt !== undefined &&
     environment.now() >= action.wolf.deadlineAt
-  if (!allActorsConfirmed(action) && !deadlineReached) {
-    fail('Chỉ có thể chốt sớm khi mọi Ma Sói đã xác nhận, hoặc khi hết 10 giây.')
+  const revoteAnalysis = analyzeWolfVotes(
+    confirmedVotes,
+    action.eligibleActorIds,
+    action.wolf.initialTiedTargetIds,
+  )
+  if (revoteAnalysis.leaders.length > 1 && !deadlineReached) {
+    fail('Chỉ có thể chốt sớm khi đã có một mục tiêu dẫn đầu duy nhất, hoặc khi hết 10 giây.')
   }
 
   const result = resolveWolfRevote({
-    votes: action.selections,
+    votes: confirmedVotes,
     actorIds: action.eligibleActorIds,
     initialTiedTargetIds: action.wolf.initialTiedTargetIds,
     random: environment.random,
@@ -1341,17 +1349,10 @@ function resolveWolfVote(
       metadata: { tiedTargetIds: action.wolf.initialTiedTargetIds },
     })
   }
-  const revoteAnalysis = analyzeWolfVotes(
-    action.selections,
-    action.eligibleActorIds,
-    action.wolf.initialTiedTargetIds,
-  )
   const randomCandidateIds =
     result.reason === 'REVOTE_TIED_RANDOM'
       ? revoteAnalysis.leaders
-      : result.reason === 'REVOTE_ALL_ABSTAIN_RANDOM'
-        ? action.wolf.initialTiedTargetIds
-        : []
+      : []
   finalizeWolfAction(
     state,
     action,

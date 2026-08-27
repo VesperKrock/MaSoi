@@ -39,6 +39,7 @@ export const roomTransportErrorCodes = {
   invalidTarget: 'INVALID_TARGET',
   sameProtectorTarget: 'SAME_PROTECTOR_TARGET',
   wolfNoBiteCapableMember: 'WOLF_NO_BITE_CAPABLE_MEMBER',
+  wolfTargetRequired: 'WOLF_TARGET_REQUIRED',
   wolfRoundNotReady: 'WOLF_ROUND_NOT_READY',
   revoteNotReady: 'REVOTE_NOT_READY',
   revoteExpired: 'REVOTE_EXPIRED',

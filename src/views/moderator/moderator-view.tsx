@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { playerLabel } from '../../components/player-label'
 import type {
   NightAction,
@@ -293,10 +293,28 @@ function WolfActionPanel({
   dispatch,
 }: ModeratorViewProps & { action: NightAction }) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
-  const allConfirmed = action.eligibleActorIds.every((playerId) =>
-    action.confirmedActorIds.includes(playerId),
+  const deadlineResolvedRef = useRef<string | null>(null)
+  const confirmedTargets = action.confirmedActorIds.flatMap((playerId) => {
+    const targetId = action.selections[playerId]
+    return typeof targetId === 'string' ? [targetId] : []
+  })
+  const targetCounts = confirmedTargets.reduce<Record<PlayerId, number>>(
+    (counts, targetId) => ({
+      ...counts,
+      [targetId]: (counts[targetId] ?? 0) + 1,
+    }),
+    {},
   )
+  const topCount = Math.max(0, ...Object.values(targetCounts))
+  const topTargetCount = Object.values(targetCounts).filter(
+    (count) => count === topCount && count > 0,
+  ).length
   const deadlineAt = action.wolf?.deadlineAt
+  const canResolve =
+    confirmedTargets.length > 0 &&
+    (action.wolf?.round !== 'REVOTE' ||
+      topTargetCount === 1 ||
+      secondsLeft === 0)
 
   useEffect(() => {
     if (!deadlineAt || action.status !== 'OPEN') return
@@ -304,14 +322,16 @@ function WolfActionPanel({
     const tick = () => {
       const remaining = Math.max(0, deadlineAt - Date.now())
       setSecondsLeft(Math.ceil(remaining / 1000))
-      if (remaining === 0) {
+      const deadlineKey = `${action.id}:${action.wolf?.round}:${deadlineAt}`
+      if (remaining === 0 && deadlineResolvedRef.current !== deadlineKey) {
+        deadlineResolvedRef.current = deadlineKey
         void dispatch({ type: 'RESOLVE_WOLF_VOTE', atDeadline: true })
       }
     }
     tick()
     const timer = window.setInterval(tick, 250)
     return () => window.clearInterval(timer)
-  }, [action.status, deadlineAt, dispatch])
+  }, [action.id, action.status, action.wolf?.round, deadlineAt, dispatch])
 
   if (action.status !== 'OPEN') {
     return null
@@ -337,10 +357,8 @@ function WolfActionPanel({
           <div key={actorId}>
             <span>{playerName(state, actorId)}</span>
             <strong>
-              {Object.prototype.hasOwnProperty.call(action.selections, actorId)
-                ? action.selections[actorId]
-                  ? playerName(state, action.selections[actorId])
-                  : 'Không chọn'
+              {typeof action.selections[actorId] === 'string'
+                ? playerName(state, action.selections[actorId])
                 : 'Đang chờ'}
             </strong>
           </div>
@@ -348,7 +366,7 @@ function WolfActionPanel({
       </div>
       <button
         className="button primary full"
-        disabled={!allConfirmed}
+        disabled={!canResolve}
         onClick={() => dispatch({ type: 'RESOLVE_WOLF_VOTE' })}
       >
         {action.wolf?.round === 'REVOTE'

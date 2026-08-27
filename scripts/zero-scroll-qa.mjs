@@ -48,6 +48,7 @@ const defaultSurfaces = [
   'reveal',
   'neutral',
   'action',
+  'wolf-pack-action',
   'seer-select',
   'seer-result',
   'protector-action',
@@ -154,6 +155,22 @@ function inspectPlayerLayout() {
           : 0,
       }
     : null
+  const wolfMarkers = [...root.querySelectorAll('.wolf-peer-marker')]
+  const wolfMarkerMetrics = wolfMarkers.length > 0
+    ? {
+        count: wolfMarkers.length,
+        minFontSize: Math.min(
+          ...wolfMarkers.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+        ),
+        clippedCount: wolfMarkers.filter((element) => {
+          const target = element.closest('.target')
+          return target && (
+            target.scrollHeight > target.clientHeight + tolerance ||
+            target.scrollWidth > target.clientWidth + tolerance
+          )
+        }).length,
+      }
+    : null
   const touchTargetsPass =
     !targetMetrics ||
     (targetMetrics.minWidth >= 44 && targetMetrics.minHeight >= 44)
@@ -202,7 +219,10 @@ function inspectPlayerLayout() {
       clippedStages.length === 0 &&
       outsideControls.length === 0 &&
       touchTargetsPass &&
-      requiredControlsPass,
+      requiredControlsPass &&
+      (!wolfMarkerMetrics || (
+        wolfMarkerMetrics.minFontSize >= 9 && wolfMarkerMetrics.clippedCount === 0
+      )),
     surface: root.dataset.surface,
     documentScroll,
     rootOutside,
@@ -214,6 +234,7 @@ function inspectPlayerLayout() {
     requiredControlsPass,
     requiredControlMetrics,
     targetMetrics,
+    wolfMarkerMetrics,
   }
 }
 
@@ -270,6 +291,12 @@ try {
       const metrics = result.requiredControlMetrics
       console.log(
         `  required-controls=${metrics.count} min=${metrics.minWidth.toFixed(2)}x${metrics.minHeight.toFixed(2)}`,
+      )
+    }
+    if (result.wolfMarkerMetrics) {
+      const metrics = result.wolfMarkerMetrics
+      console.log(
+        `  wolf-markers=${metrics.count} min-font=${metrics.minFontSize.toFixed(2)} clipped=${metrics.clippedCount}`,
       )
     }
     if (!result.pass) console.log(JSON.stringify(result, null, 2))
