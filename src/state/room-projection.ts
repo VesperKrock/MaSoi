@@ -45,6 +45,7 @@ export interface PlayerActionSnapshot {
     | 'SEER_RESULT'
     | 'PROTECTOR_SELECT'
     | 'HUNTER_PRELOCK'
+    | 'SERIAL_KILLER_ATTACK'
     | 'WITCH_DECISION'
     | 'CUPID_PAIRING'
   resurrectionCandidates?: Player[]
@@ -136,6 +137,8 @@ function projectNightAction(
       ? action.eligibleTargetIds
       : action.kind === 'HUNTER_PRELOCK'
         ? action.eligibleTargetIds
+        : action.kind === 'SERIAL_KILLER_ATTACK'
+          ? action.eligibleTargetIds
         : action.kind === 'SELECT_TARGET'
           ? getEligibleRoleTargets(state, action.roleId, player.id)
           : action.eligibleTargetIds
@@ -171,6 +174,8 @@ function projectNightAction(
             ? 'PROTECTOR_SELECT'
             : action.roleId === 'hunter'
               ? 'HUNTER_PRELOCK'
+              : action.roleId === 'serial-killer'
+                ? 'SERIAL_KILLER_ATTACK'
               : action.roleId === 'witch'
                 ? 'WITCH_DECISION'
                 : action.roleId === 'cupid'

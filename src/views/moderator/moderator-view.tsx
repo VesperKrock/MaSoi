@@ -431,25 +431,50 @@ function NightResolutionPanel({ state, dispatch }: ModeratorViewProps) {
   const wolfEffect = resolution.effects.find(
     (effect) => effect.sourceType === 'WOLF_ATTACK',
   )
+  const serialKillerEffect = resolution.effects.find(
+    (effect) => effect.sourceType === 'SERIAL_KILLER_ATTACK',
+  )
+  const attackLine = (
+    label: string,
+    effect: (typeof resolution.effects)[number] | undefined,
+  ) => {
+    if (!effect) return null
+    const outcome =
+      effect.outcome === 'BLOCKED_BY_PROTECTOR'
+        ? ' · Bảo Vệ đã chặn'
+        : effect.outcome === 'IMMUNE_TO_WOLF_ATTACK'
+          ? ' · mục tiêu miễn nhiễm'
+          : effect.outcome === 'HALF_WOLF_BITE_SCHEDULED'
+            ? ' · vết cắn không gây chết'
+            : ' · không bị chặn'
+    return (
+      <span>
+        {label}: <strong>{playerName(state, effect.targetPlayerId)}</strong>
+        {outcome}
+      </span>
+    )
+  }
   return (
     <div className="night-resolution-summary resolved-resolution">
       <div>
         <p className="eyebrow">Tổng hợp hiệu ứng đêm</p>
         {resolution.outcome === 'NO_ATTACK' ? (
-          <strong>Không có đòn tấn công Ma Sói.</strong>
+          <strong>Không có đòn tấn công được chọn.</strong>
         ) : (
           <>
-            <span>
-              Ma Sói tấn công: <strong>{playerName(state, wolfEffect?.targetPlayerId)}</strong>
-            </span>
-            {resolution.outcome === 'BLOCKED' ? (
-              <strong>Bảo Vệ đã chặn đòn tấn công.</strong>
+            {attackLine('Ma Sói tấn công', wolfEffect)}
+            {attackLine('Sát Nhân Hàng Loạt tấn công', serialKillerEffect)}
+            {resolution.provisionalDeathCandidateIds.length > 0 ? (
+              <strong>
+                Ứng viên tử vong đêm nay:{' '}
+                {resolution.provisionalDeathCandidateIds
+                  .map((playerId) => playerName(state, playerId))
+                  .join(', ')}
+              </strong>
             ) : resolution.outcome === 'BITE_SCHEDULED' ? (
               <strong>Bán Sói: chờ hóa từ Đêm kế tiếp.</strong>
             ) : (
-              <strong>
-                Ứng viên tử vong đêm nay: {playerName(state, wolfEffect?.targetPlayerId)}
-              </strong>
+              <strong>Không có ứng viên tử vong từ các đòn đầu Đêm.</strong>
             )}
           </>
         )}
@@ -630,6 +655,11 @@ function NightPanel({ state, dispatch }: ModeratorViewProps) {
               {isActive && action?.kind === 'HUNTER_PRELOCK' && (
                 <div className="action-monitor silent-call">
                   <p>Đang chờ Thợ Săn khóa trước mục tiêu riêng.</p>
+                </div>
+              )}
+              {isActive && action?.kind === 'SERIAL_KILLER_ATTACK' && (
+                <div className="action-monitor silent-call">
+                  <p>Đang chờ Sát Nhân Hàng Loạt xác nhận hành động riêng.</p>
                 </div>
               )}
               {isActive && action?.kind === 'WITCH_DECISION' && (

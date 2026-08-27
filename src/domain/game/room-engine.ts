@@ -16,8 +16,11 @@ import {
 import { detectForSeer } from '../gameplay/night-rules'
 import {
   createHalfWolfBiteEffect,
+  createSerialKillerAttackEffect,
   createWolfAttackEffect,
+  createWolfAttackAgainstSerialKillerEffect,
   getNightResolutionReadiness,
+  type NightEffectInput,
 } from '../gameplay/night-resolution'
 import {
   createInitialFactionTransitionState,
@@ -902,6 +905,78 @@ function confirmHunterPrelock(
   finishCall(state, 'hunter', environment)
 }
 
+function castSerialKillerAttack(
+  state: RoomState,
+  playerId: PlayerId,
+  targetId: PlayerId | null,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (
+    action.kind !== 'SERIAL_KILLER_ATTACK' ||
+    action.roleId !== 'serial-killer'
+  ) {
+    fail('Đây không phải lượt hành động của Sát Nhân Hàng Loạt.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Sát Nhân Hàng Loạt còn sống mới được chọn mục tiêu.')
+  }
+  if (action.confirmedActorIds.includes(playerId)) {
+    fail('Quyết định của Sát Nhân Hàng Loạt đã được xác nhận.')
+  }
+  if (targetId !== null && !action.eligibleTargetIds.includes(targetId)) {
+    fail('Mục tiêu phải còn sống, cùng phòng và không phải chính mình.')
+  }
+
+  action.selections[playerId] = targetId
+  appendEvent(state, environment, 'ROLE_ACTION_SUBMITTED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'serial-killer',
+    targetPlayerId: targetId ?? undefined,
+    metadata: {
+      actionId: action.id,
+      intentOnly: true,
+      nobody: targetId === null,
+      confirmed: false,
+      private: true,
+    },
+  })
+}
+
+function confirmSerialKillerAttack(
+  state: RoomState,
+  playerId: PlayerId,
+  environment: GameEnvironment,
+): void {
+  const action = getActiveAction(state)
+  if (
+    action.kind !== 'SERIAL_KILLER_ATTACK' ||
+    action.roleId !== 'serial-killer'
+  ) {
+    fail('Đây không phải lượt xác nhận của Sát Nhân Hàng Loạt.')
+  }
+  if (!action.eligibleActorIds.includes(playerId)) {
+    fail('Chỉ Sát Nhân Hàng Loạt còn sống mới được xác nhận mục tiêu.')
+  }
+  if (!Object.prototype.hasOwnProperty.call(action.selections, playerId)) {
+    fail('Hãy chọn một người hoặc Không ai trước khi xác nhận.')
+  }
+  if (action.confirmedActorIds.includes(playerId)) return
+
+  action.confirmedActorIds.push(playerId)
+  action.status = 'COMPLETED'
+  action.completedAt = environment.now()
+  const targetId = action.selections[playerId]
+  appendEvent(state, environment, 'SERIAL_KILLER_TARGET_LOCKED', {
+    actorPlayerId: playerId,
+    actorRoleId: 'serial-killer',
+    targetPlayerId: targetId ?? undefined,
+    resolution: targetId === null ? 'NOBODY' : 'TARGET_LOCKED',
+    metadata: { intentOnly: true, private: true },
+  })
+  finishCall(state, 'serial-killer', environment)
+}
+
 function submitTargetAction(
   state: RoomState,
   playerId: PlayerId,
@@ -1237,6 +1312,9 @@ function completeNightCall(
   if (roleId === 'hunter' && action?.status === 'OPEN') {
     fail('Thợ Săn còn sống phải khóa và xác nhận mục tiêu trên thiết bị riêng.')
   }
+  if (roleId === 'serial-killer' && action?.status === 'OPEN') {
+    fail('Sát Nhân Hàng Loạt còn sống phải chọn và xác nhận hành động trên thiết bị riêng.')
+  }
   if (roleId === 'cupid' && action?.status === 'OPEN') {
     fail('Thần Tình Yêu còn sống trong Đêm 1 phải ghép đúng hai người.')
   }
@@ -1338,18 +1416,44 @@ function resolveNightConsequences(
   const wolfTargetRoleId = wolfTargetId
     ? getRoleIdForPlayer(state, wolfTargetId)
     : undefined
-  const effects = wolfTargetId
-    ? [
-        wolfTargetRoleId === 'half-wolf' &&
-        !isHalfWolfTransformed(state.factionTransitions, wolfTargetId)
-          ? createHalfWolfBiteEffect(
+  const effects: NightEffectInput[] = []
+  if (wolfTargetId) {
+    effects.push(
+      wolfTargetRoleId === 'half-wolf' &&
+      !isHalfWolfTransformed(state.factionTransitions, wolfTargetId)
+        ? createHalfWolfBiteEffect(
+            environment.nextId(),
+            wolfTargetId,
+            state.dayNumber,
+          )
+        : wolfTargetRoleId === 'serial-killer'
+          ? createWolfAttackAgainstSerialKillerEffect(
               environment.nextId(),
               wolfTargetId,
-              state.dayNumber,
             )
           : createWolfAttackEffect(environment.nextId(), wolfTargetId),
-      ]
-    : []
+    )
+  }
+  const serialKillerAction = state.night.actionsByRole['serial-killer']
+  const serialKillerPlayerId = serialKillerAction?.eligibleActorIds[0]
+  const serialKillerHasSelection =
+    serialKillerPlayerId !== undefined &&
+    Object.prototype.hasOwnProperty.call(
+      serialKillerAction?.selections ?? {},
+      serialKillerPlayerId,
+    )
+  const serialKillerTargetId = serialKillerHasSelection
+    ? serialKillerAction?.selections[serialKillerPlayerId]
+    : undefined
+  if (serialKillerTargetId) {
+    effects.push(
+      createSerialKillerAttackEffect(
+        environment.nextId(),
+        serialKillerTargetId,
+        serialKillerPlayerId,
+      ),
+    )
+  }
   const hunterAction = state.night.actionsByRole.hunter
   const hunterPlayerId = hunterAction?.eligibleActorIds[0]
   const hunterHasSelection =
@@ -1412,7 +1516,9 @@ function resolveNightConsequences(
       environment,
       effect.sourceType === 'HUNTER_SHOT'
         ? 'HUNTER_SHOT_CREATED'
-        : 'WOLF_ATTACK_CREATED',
+        : effect.sourceType === 'SERIAL_KILLER_ATTACK'
+          ? 'SERIAL_KILLER_ATTACK_CREATED'
+          : 'WOLF_ATTACK_CREATED',
       {
         actorRoleId: effect.sourceRoleId,
         targetPlayerId: effect.targetPlayerId,
@@ -1429,14 +1535,32 @@ function resolveNightConsequences(
       },
     )
     if (effect.outcome === 'BLOCKED_BY_PROTECTOR') {
-      appendEvent(state, environment, 'WOLF_ATTACK_BLOCKED', {
-        actorRoleId: 'werewolf',
+      appendEvent(
+        state,
+        environment,
+        effect.sourceType === 'SERIAL_KILLER_ATTACK'
+          ? 'SERIAL_KILLER_ATTACK_BLOCKED'
+          : 'WOLF_ATTACK_BLOCKED',
+        {
+        actorRoleId: effect.sourceRoleId,
         targetPlayerId: effect.targetPlayerId,
         resolution: effect.outcome,
         metadata: {
           effectId: effect.id,
           blockSourceType: effect.blockSourceType,
           blockSourceRoleId: effect.blockSourceRoleId,
+        },
+      })
+    }
+    if (effect.outcome === 'IMMUNE_TO_WOLF_ATTACK') {
+      appendEvent(state, environment, 'WOLF_ATTACK_IMMUNE', {
+        actorRoleId: 'werewolf',
+        targetPlayerId: effect.targetPlayerId,
+        resolution: effect.outcome,
+        metadata: {
+          effectId: effect.id,
+          immunity: effect.immunity,
+          private: true,
         },
       })
     }
@@ -1463,7 +1587,9 @@ function resolveNightConsequences(
   }
 
   appendEvent(state, environment, 'NIGHT_RESOLUTION_COMPLETED', {
-    actorRoleId: 'werewolf',
+    actorRoleId: result.effects.find(
+      (effect) => effect.sourceType !== 'HUNTER_SHOT',
+    )?.sourceRoleId,
     resolution: result.outcome,
     metadata: {
       resolutionId: state.nightResolution.id,
@@ -2022,6 +2148,17 @@ export function applyRoomCommand(
       break
     case 'CONFIRM_HUNTER_PRELOCK':
       confirmHunterPrelock(state, command.playerId, environment)
+      break
+    case 'CAST_SERIAL_KILLER_ATTACK':
+      castSerialKillerAttack(
+        state,
+        command.playerId,
+        command.targetId,
+        environment,
+      )
+      break
+    case 'CONFIRM_SERIAL_KILLER_ATTACK':
+      confirmSerialKillerAttack(state, command.playerId, environment)
       break
     case 'SUBMIT_WITCH_DECISION':
       submitWitchDecision(

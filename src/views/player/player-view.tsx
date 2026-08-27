@@ -441,6 +441,53 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
       </section>
     )
   }
+  if (action.mode === 'SERIAL_KILLER_ATTACK') {
+    const choose = (targetId: string | null) =>
+      void dispatch({
+        type: 'CAST_SERIAL_KILLER_ATTACK',
+        playerId: snapshot.self.id,
+        targetId,
+      })
+    return (
+      <section className="player-action compact-action serial-killer-action">
+        <header>
+          <p className="eyebrow">HÀNH ĐỘNG ĐÊM · RIÊNG TƯ</p>
+          <h1>Chọn mục tiêu</h1>
+          <p>{action.instructions}</p>
+        </header>
+        <div className="target-list">
+          {action.candidates.map((candidate) => (
+            <TargetButton
+              key={candidate.id}
+              seat={candidate.seat}
+              name={candidate.alias}
+              selected={action.currentTargetId === candidate.id}
+              onClick={() => choose(candidate.id)}
+            />
+          ))}
+          <TargetButton
+            seat="—"
+            name="Không ai"
+            selected={action.hasSelected && action.currentTargetId === null}
+            onClick={() => choose(null)}
+          />
+        </div>
+        <button
+          className="button primary full action-confirm"
+          disabled={!action.hasSelected}
+          onClick={() =>
+            void dispatch({
+              type: 'CONFIRM_SERIAL_KILLER_ATTACK',
+              playerId: snapshot.self.id,
+            })
+          }
+          data-required-control
+        >
+          Xác nhận · Úp máy
+        </button>
+      </section>
+    )
+  }
   const choose = (targetId: string | null) => {
     if (action.kind === 'WOLF_VOTE') {
       void dispatch({

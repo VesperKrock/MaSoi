@@ -143,6 +143,28 @@ function snapshotFor(surface: string): PlayerRoomSnapshot {
       },
     }
   }
+  if (surface === 'serial-killer-action') {
+    return {
+      ...baseSnapshot,
+      roleIdentity: {
+        roleId: 'serial-killer',
+        displayName: 'Sát Nhân Hàng Loạt',
+        factionMeaning: 'Độc Lập',
+        rulesText: 'Mỗi đêm chọn một người khác hoặc Không ai.',
+        cardAsset: cardAssetUrl('Sát Nhân Hàng Loạt.jpg'),
+      },
+      nightAction: {
+        id: 'qa-serial-killer-action',
+        kind: 'SERIAL_KILLER_ATTACK',
+        roleId: 'serial-killer',
+        roleName: 'Sát Nhân Hàng Loạt',
+        instructions: 'Chọn một người còn sống khác hoặc Không ai.',
+        mode: 'SERIAL_KILLER_ATTACK',
+        candidates: players.slice(1),
+        hasSelected: false,
+      },
+    }
+  }
   if (surface === 'cupid-action') {
     return {
       ...baseSnapshot,

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   createHalfWolfBiteEffect,
+  createSerialKillerAttackEffect,
   createWolfAttackEffect,
+  createWolfAttackAgainstSerialKillerEffect,
   getNightResolutionReadiness,
   resolveNightEffects,
   type NightEffectInput,
@@ -145,6 +147,104 @@ describe('MS-1B2 source-aware Night effect resolution', () => {
     expect(result.effects).toHaveLength(2)
     expect(result.provisionalDeathCandidateIds).toEqual(['chau'])
   })
+
+  it('resolves an unprotected Serial Killer attack as a villain-caused provisional death', () => {
+    const result = resolveNightEffects(
+      [createSerialKillerAttackEffect('sk-effect', 'chau', 'sk')],
+      null,
+    )
+
+    expect(result.outcome).toBe('UNBLOCKED')
+    expect(result.effects[0]).toMatchObject({
+      sourceType: 'SERIAL_KILLER_ATTACK',
+      sourceRoleId: 'serial-killer',
+      sourcePlayerId: 'sk',
+      category: 'HOSTILE_VILLAIN_ATTACK',
+      lethal: true,
+      protectorBlockable: true,
+      witchInteractable: true,
+      outcome: 'UNBLOCKED',
+    })
+    expect(result.provisionalDeathCandidateIds).toEqual(['chau'])
+  })
+
+  it('uses one Protector shield to block Wolf and Serial Killer attacks on the same target', () => {
+    const result = resolveNightEffects(
+      [
+        createWolfAttackEffect('wolf-effect', 'chau'),
+        createSerialKillerAttackEffect('sk-effect', 'chau', 'sk'),
+      ],
+      'chau',
+    )
+
+    expect(result.outcome).toBe('BLOCKED')
+    expect(result.effects.map((effect) => effect.outcome)).toEqual([
+      'BLOCKED_BY_PROTECTOR',
+      'BLOCKED_BY_PROTECTOR',
+    ])
+    expect(result.provisionalDeathCandidateIds).toEqual([])
+  })
+
+  it('preserves both unblocked attack sources but emits one provisional victim', () => {
+    const result = resolveNightEffects([
+      createWolfAttackEffect('wolf-effect', 'chau'),
+      createSerialKillerAttackEffect('sk-effect', 'chau', 'sk'),
+    ])
+
+    expect(result.effects.map((effect) => effect.sourceType)).toEqual([
+      'WOLF_ATTACK',
+      'SERIAL_KILLER_ATTACK',
+    ])
+    expect(result.provisionalDeathCandidateIds).toEqual(['chau'])
+  })
+
+  it('applies Protector before Wolf immunity on Serial Killer', () => {
+    const protectedResult = resolveNightEffects(
+      [createWolfAttackAgainstSerialKillerEffect('wolf-sk', 'sk')],
+      'sk',
+    )
+    expect(protectedResult.outcome).toBe('BLOCKED')
+    expect(protectedResult.effects[0].outcome).toBe('BLOCKED_BY_PROTECTOR')
+    expect(protectedResult.effects[0].immunity).toBeUndefined()
+
+    const immuneResult = resolveNightEffects([
+      createWolfAttackAgainstSerialKillerEffect('wolf-sk', 'sk'),
+    ])
+    expect(immuneResult.outcome).toBe('IMMUNE')
+    expect(immuneResult.effects[0]).toMatchObject({
+      sourceType: 'WOLF_ATTACK',
+      lethal: false,
+      protectorBlockable: true,
+      outcome: 'IMMUNE_TO_WOLF_ATTACK',
+      immunity: {
+        kind: 'WOLF_ATTACK_IMMUNITY',
+        roleId: 'serial-killer',
+      },
+    })
+    expect(immuneResult.provisionalDeathCandidateIds).toEqual([])
+  })
+
+  it('uses stable aggregate precedence for mixed blocked, immune, and lethal effects', () => {
+    const immuneAndBlocked = resolveNightEffects(
+      [
+        createWolfAttackAgainstSerialKillerEffect('wolf-sk', 'sk'),
+        createSerialKillerAttackEffect('sk-attack', 'protected', 'sk'),
+      ],
+      'protected',
+    )
+    expect(immuneAndBlocked.outcome).toBe('IMMUNE')
+    expect(immuneAndBlocked.provisionalDeathCandidateIds).toEqual([])
+
+    const immuneAndLethal = resolveNightEffects(
+      [
+        createWolfAttackAgainstSerialKillerEffect('wolf-sk', 'sk'),
+        createSerialKillerAttackEffect('sk-attack', 'victim', 'sk'),
+      ],
+      null,
+    )
+    expect(immuneAndLethal.outcome).toBe('UNBLOCKED')
+    expect(immuneAndLethal.provisionalDeathCandidateIds).toEqual(['victim'])
+  })
 })
 
 describe('MS-1B2 contributing-call readiness', () => {
@@ -182,6 +282,21 @@ describe('MS-1B2 contributing-call readiness', () => {
         ],
       }),
     ).toEqual({ ready: false, incompleteRoleIds: ['werewolf'] })
+  })
+
+  it('requires a configured Serial Killer call to complete', () => {
+    expect(
+      getNightResolutionReadiness({
+        configuredRoleIds: ['werewolf', 'serial-killer'],
+        calls: [
+          { roleId: 'werewolf', status: 'COMPLETED' },
+          { roleId: 'serial-killer', status: 'CALLED' },
+        ],
+      }),
+    ).toEqual({
+      ready: false,
+      incompleteRoleIds: ['serial-killer'],
+    })
   })
 
   it('is ready without a configured Protector', () => {

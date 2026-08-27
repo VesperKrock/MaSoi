@@ -73,6 +73,7 @@ export interface NightAction {
     | 'WOLF_VOTE'
     | 'SELECT_TARGET'
     | 'HUNTER_PRELOCK'
+    | 'SERIAL_KILLER_ATTACK'
     | 'WITCH_DECISION'
     | 'CUPID_PAIRING'
   status: 'OPEN' | 'COMPLETED' | 'CLOSED_BY_MODERATOR'
@@ -176,6 +177,10 @@ export type JournalEventType =
   | 'PROTECTOR_INTENT'
   | 'WOLF_ATTACK_CREATED'
   | 'WOLF_ATTACK_BLOCKED'
+  | 'WOLF_ATTACK_IMMUNE'
+  | 'SERIAL_KILLER_TARGET_LOCKED'
+  | 'SERIAL_KILLER_ATTACK_CREATED'
+  | 'SERIAL_KILLER_ATTACK_BLOCKED'
   | 'NIGHT_DEATH_CANDIDATE_CREATED'
   | 'NIGHT_RESOLUTION_COMPLETED'
   | 'HUNTER_TARGET_LOCKED'
@@ -281,6 +286,12 @@ export type RoomCommand =
       targetId: PlayerId | null
     }
   | { type: 'CONFIRM_HUNTER_PRELOCK'; playerId: PlayerId }
+  | {
+      type: 'CAST_SERIAL_KILLER_ATTACK'
+      playerId: PlayerId
+      targetId: PlayerId | null
+    }
+  | { type: 'CONFIRM_SERIAL_KILLER_ATTACK'; playerId: PlayerId }
   | { type: 'RESOLVE_WOLF_VOTE'; atDeadline?: boolean }
   | { type: 'COMPLETE_NIGHT_CALL'; roleId: RoleId }
   | { type: 'RESOLVE_NIGHT_EFFECTS' }

@@ -3,7 +3,7 @@ import type { RoleId } from './classic-catalog'
 export interface RoleDefinition {
   id: RoleId
   displayName: string
-  team: 'WEREWOLF' | 'VILLAGE'
+  team: 'WEREWOLF' | 'VILLAGE' | 'SOLO'
   cardAsset: string | null
   actsAtNight: boolean
   nightOrder: number | null
@@ -12,6 +12,7 @@ export interface RoleDefinition {
     | 'WOLF_VOTE'
     | 'SELECT_TARGET'
     | 'HUNTER_PRELOCK'
+    | 'SERIAL_KILLER_ATTACK'
     | 'WITCH_DECISION'
     | 'CUPID_PAIRING'
     | 'NONE'
@@ -79,6 +80,22 @@ export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
     nightStage: 'PRE_WITCH',
     description: 'Mỗi đêm chọn một người để bảo vệ.',
     instructions: 'Chọn một người để bảo vệ đêm nay.',
+  },
+  'serial-killer': {
+    id: 'serial-killer',
+    displayName: 'Sát Nhân Hàng Loạt',
+    team: 'SOLO',
+    cardAsset: null,
+    actsAtNight: true,
+    nightOrder: 35,
+    firstNightOnly: false,
+    actionType: 'SERIAL_KILLER_ATTACK',
+    targetRule: 'LIVING_OTHER',
+    nightStage: 'PRE_WITCH',
+    description:
+      'Mỗi đêm chọn một người khác hoặc Không ai; đòn tấn công có thể bị Bảo Vệ chặn.',
+    instructions:
+      'Chọn một người còn sống khác hoặc Không ai, rồi xác nhận quyết định.',
   },
   hunter: {
     id: 'hunter',

@@ -176,6 +176,13 @@ Object.assign(serverMessages, {
     'Thiết bị này không có thông tin Người Yêu riêng để xác nhận.',
 })
 
+Object.assign(serverMessages, {
+  SERIAL_KILLER_SELECTION_REQUIRED:
+    'Hãy chọn một mục tiêu hoặc Không ai trước khi xác nhận hành động.',
+  SERIAL_KILLER_SELECTION_ALREADY_CONFIRMED:
+    'Hành động của Sát Nhân Hàng Loạt trong Đêm này đã được xác nhận.',
+})
+
 const machineCodes = new Set(Object.keys(serverMessages))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -326,6 +333,8 @@ function readNightAction(value: unknown): NightAction {
         ? 'WOLF_VOTE'
         : value.kind === 'HUNTER_PRELOCK'
           ? 'HUNTER_PRELOCK'
+          : value.kind === 'SERIAL_KILLER_ATTACK'
+            ? 'SERIAL_KILLER_ATTACK'
           : value.kind === 'CUPID_PAIRING'
             ? 'CUPID_PAIRING'
         : value.kind === 'WITCH_DECISION'
@@ -440,7 +449,8 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
         entry.category !== 'NON_VILLAIN_LETHAL_EFFECT') ||
       (entry.outcome !== 'BLOCKED_BY_PROTECTOR' &&
         entry.outcome !== 'UNBLOCKED' &&
-        entry.outcome !== 'HALF_WOLF_BITE_SCHEDULED')
+        entry.outcome !== 'HALF_WOLF_BITE_SCHEDULED' &&
+        entry.outcome !== 'IMMUNE_TO_WOLF_ATTACK')
     ) {
       throw new Error('BACKEND_UNAVAILABLE')
     }
@@ -474,6 +484,15 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
               dueNightNumber: Number(entry.conversion.dueNightNumber),
             }
           : undefined,
+      immunity:
+        isRecord(entry.immunity) &&
+        entry.immunity.kind === 'WOLF_ATTACK_IMMUNITY' &&
+        entry.immunity.roleId === 'serial-killer'
+          ? {
+              kind: 'WOLF_ATTACK_IMMUNITY' as const,
+              roleId: 'serial-killer' as const,
+            }
+          : undefined,
       blockSourceType:
         entry.blockSourceType === 'PROTECTOR_SHIELD'
           ? ('PROTECTOR_SHIELD' as const)
@@ -504,7 +523,8 @@ function readNightResolution(value: unknown): PersistedNightResolution | null {
     value.outcome === 'NO_ATTACK' ||
     value.outcome === 'BLOCKED' ||
     value.outcome === 'UNBLOCKED' ||
-    value.outcome === 'BITE_SCHEDULED'
+    value.outcome === 'BITE_SCHEDULED' ||
+    value.outcome === 'IMMUNE'
       ? value.outcome
       : null
   if (!outcome) throw new Error('BACKEND_UNAVAILABLE')
@@ -702,6 +722,8 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
         ? 'WOLF_VOTE'
         : value.kind === 'HUNTER_PRELOCK'
           ? 'HUNTER_PRELOCK'
+          : value.kind === 'SERIAL_KILLER_ATTACK'
+            ? 'SERIAL_KILLER_ATTACK'
           : value.kind === 'CUPID_PAIRING'
             ? 'CUPID_PAIRING'
             : value.kind === 'WITCH_DECISION'
@@ -723,6 +745,7 @@ function readPlayerNightAction(value: unknown): PlayerRoomSnapshot['nightAction'
       value.mode === 'SEER_RESULT' ||
       value.mode === 'PROTECTOR_SELECT' ||
       value.mode === 'HUNTER_PRELOCK' ||
+      value.mode === 'SERIAL_KILLER_ATTACK' ||
       value.mode === 'WITCH_DECISION' ||
       value.mode === 'CUPID_PAIRING'
         ? value.mode
@@ -1399,8 +1422,10 @@ export class SupabaseRoomTransport implements RoomTransport {
             ? 'ms1f_open_witch_call'
             : command.roleId === 'hunter'
               ? 'ms1d1_open_hunter_call'
-              : command.roleId === 'cupid'
-                ? 'ms1f_open_cupid_call'
+            : command.roleId === 'cupid'
+              ? 'ms1f_open_cupid_call'
+              : command.roleId === 'serial-killer'
+                ? 'ms1g1_open_serial_killer_call'
             : 'ms1b1_open_night_role_call'
       } else if (command.type === 'CAST_WOLF_VOTE') {
         functionName = 'ms1b1_submit_wolf_ballot'
@@ -1420,6 +1445,10 @@ export class SupabaseRoomTransport implements RoomTransport {
         functionName = 'ms1d1_submit_hunter_prelock'
       } else if (command.type === 'CONFIRM_HUNTER_PRELOCK') {
         functionName = 'ms1d1_confirm_hunter_prelock'
+      } else if (command.type === 'CAST_SERIAL_KILLER_ATTACK') {
+        functionName = 'ms1g1_submit_serial_killer_intent'
+      } else if (command.type === 'CONFIRM_SERIAL_KILLER_ATTACK') {
+        functionName = 'ms1g1_confirm_serial_killer_intent'
       } else if (command.type === 'RESOLVE_NIGHT_EFFECTS') {
         functionName = 'ms1b2_resolve_night_effects'
       } else if (command.type === 'SUBMIT_WITCH_DECISION') {
@@ -1450,7 +1479,8 @@ export class SupabaseRoomTransport implements RoomTransport {
         (command.type === 'CALL_NIGHT_ROLE' &&
           command.roleId !== 'witch' &&
           command.roleId !== 'hunter' &&
-          command.roleId !== 'cupid') ||
+          command.roleId !== 'cupid' &&
+          command.roleId !== 'serial-killer') ||
         command.type === 'COMPLETE_NIGHT_CALL'
       ) {
         args.p_role_id = command.roleId
@@ -1468,6 +1498,7 @@ export class SupabaseRoomTransport implements RoomTransport {
         command.type === 'SUBMIT_SEER_INSPECTION' ||
         command.type === 'SUBMIT_PROTECTOR_TARGET' ||
         command.type === 'CAST_HUNTER_PRELOCK' ||
+        command.type === 'CAST_SERIAL_KILLER_ATTACK' ||
         command.type === 'CAST_DAY_VOTE' ||
         command.type === 'SUBMIT_HUNTER_REVENGE'
       ) {

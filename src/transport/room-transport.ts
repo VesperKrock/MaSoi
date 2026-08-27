@@ -54,6 +54,9 @@ export const roomTransportErrorCodes = {
   witchPoisonSelfTarget: 'WITCH_POISON_SELF_TARGET',
   hunterPrelockRequired: 'HUNTER_PRELOCK_REQUIRED',
   hunterPrelockAlreadyConfirmed: 'HUNTER_PRELOCK_ALREADY_CONFIRMED',
+  serialKillerSelectionRequired: 'SERIAL_KILLER_SELECTION_REQUIRED',
+  serialKillerSelectionAlreadyConfirmed:
+    'SERIAL_KILLER_SELECTION_ALREADY_CONFIRMED',
   morningNotReady: 'MORNING_NOT_READY',
   notDay: 'NOT_DAY',
   dayVoteAlreadyExists: 'DAY_VOTE_ALREADY_EXISTS',

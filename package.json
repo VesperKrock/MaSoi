@@ -34,7 +34,10 @@
     "qa:faction-remote": "node scripts/faction-transition-supabase-qa.mjs --remote",
     "qa:lovers-local": "node scripts/cupid-lovers-supabase-qa.mjs --local",
     "qa:lovers-remote": "node scripts/cupid-lovers-supabase-qa.mjs --remote",
-    "qa:lovers-touch": "node scripts/zero-scroll-qa.mjs cupid-action lover-reveal"
+    "qa:lovers-touch": "node scripts/zero-scroll-qa.mjs cupid-action lover-reveal",
+    "qa:serial-killer-local": "node scripts/serial-killer-supabase-qa.mjs --local",
+    "qa:serial-killer-remote": "node scripts/serial-killer-remote-qa.mjs",
+    "qa:serial-killer-touch": "node scripts/zero-scroll-qa.mjs serial-killer-action"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

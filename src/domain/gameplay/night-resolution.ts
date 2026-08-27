@@ -8,6 +8,7 @@ export type NightEffectOutcome =
   | 'BLOCKED_BY_PROTECTOR'
   | 'UNBLOCKED'
   | 'HALF_WOLF_BITE_SCHEDULED'
+  | 'IMMUNE_TO_WOLF_ATTACK'
 
 export interface NightEffectConversion {
   kind: 'HALF_WOLF_TRANSFORMATION'
@@ -37,6 +38,10 @@ export interface NightEffectInput {
   witchInteractable?: boolean
   conversion?: NightEffectConversion
   activationCondition?: NightEffectActivationCondition
+  immunity?: {
+    kind: 'WOLF_ATTACK_IMMUNITY'
+    roleId: 'serial-killer'
+  }
 }
 
 export interface ResolvedNightEffect extends NightEffectInput {
@@ -47,7 +52,12 @@ export interface ResolvedNightEffect extends NightEffectInput {
 }
 
 export interface NightResolutionResult {
-  outcome: 'NO_ATTACK' | 'BLOCKED' | 'UNBLOCKED' | 'BITE_SCHEDULED'
+  outcome:
+    | 'NO_ATTACK'
+    | 'BLOCKED'
+    | 'UNBLOCKED'
+    | 'BITE_SCHEDULED'
+    | 'IMMUNE'
   effects: ResolvedNightEffect[]
   provisionalDeathCandidateIds: string[]
 }
@@ -75,6 +85,7 @@ const resolutionContributors: readonly RoleId[] = [
   'werewolf',
   'protector',
   'hunter',
+  'serial-killer',
 ]
 
 export function createWolfAttackEffect(
@@ -89,6 +100,38 @@ export function createWolfAttackEffect(
     targetPlayerId,
     lethal: true,
     protectorBlockable: true,
+  }
+}
+
+export function createWolfAttackAgainstSerialKillerEffect(
+  id: string,
+  targetPlayerId: string,
+): NightEffectInput {
+  return {
+    ...createWolfAttackEffect(id, targetPlayerId),
+    lethal: false,
+    immunity: {
+      kind: 'WOLF_ATTACK_IMMUNITY',
+      roleId: 'serial-killer',
+    },
+  }
+}
+
+export function createSerialKillerAttackEffect(
+  id: string,
+  targetPlayerId: string,
+  sourcePlayerId?: string,
+): NightEffectInput {
+  return {
+    id,
+    sourceType: 'SERIAL_KILLER_ATTACK',
+    sourceRoleId: 'serial-killer',
+    sourcePlayerId,
+    category: 'HOSTILE_VILLAIN_ATTACK',
+    targetPlayerId,
+    lethal: true,
+    protectorBlockable: true,
+    witchInteractable: true,
   }
 }
 
@@ -145,6 +188,7 @@ export function resolveNightEffects(
           activationStatus: effect.activationCondition
             ? 'CONDITIONAL'
             : undefined,
+          immunity: undefined,
           blockSourceType: 'PROTECTOR_SHIELD',
           blockSourceRoleId: 'protector',
         }
@@ -156,7 +200,15 @@ export function resolveNightEffects(
               ? 'CONDITIONAL'
               : undefined,
           }
-        : {
+        : effect.immunity
+          ? {
+              ...effect,
+              outcome: 'IMMUNE_TO_WOLF_ATTACK',
+              activationStatus: effect.activationCondition
+                ? 'CONDITIONAL'
+                : undefined,
+            }
+          : {
           ...effect,
           outcome: 'UNBLOCKED',
           activationStatus: effect.activationCondition
@@ -179,15 +231,17 @@ export function resolveNightEffects(
     outcome:
       resolvedEffects.length === 0
         ? 'NO_ATTACK'
-        : resolvedEffects.every(
-              (effect) => effect.outcome === 'BLOCKED_BY_PROTECTOR',
-            )
-          ? 'BLOCKED'
-          : resolvedEffects.every(
+        : resolvedEffects.some((effect) => effect.outcome === 'UNBLOCKED')
+          ? 'UNBLOCKED'
+          : resolvedEffects.some(
                 (effect) => effect.outcome === 'HALF_WOLF_BITE_SCHEDULED',
               )
             ? 'BITE_SCHEDULED'
-            : 'UNBLOCKED',
+            : resolvedEffects.some(
+                  (effect) => effect.outcome === 'IMMUNE_TO_WOLF_ATTACK',
+                )
+              ? 'IMMUNE'
+              : 'BLOCKED',
     effects: resolvedEffects,
     provisionalDeathCandidateIds,
   }
