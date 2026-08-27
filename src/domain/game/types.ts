@@ -2,6 +2,7 @@ import type { RoleId } from '../roles/classic-catalog'
 import type { PersistedNightResolution } from '../gameplay/night-resolution'
 import type { FactionTransitionState } from '../gameplay/faction-transitions'
 import type { CupidLoverState } from '../gameplay/lovers'
+import type { MatchResult } from '../gameplay/global-win'
 import type {
   WitchDecision,
   PersistedWitchCheckpoint,
@@ -11,6 +12,7 @@ import type {
 export type { RoleId } from '../roles/classic-catalog'
 export type { PersistedNightResolution } from '../gameplay/night-resolution'
 export type { CupidLoverState } from '../gameplay/lovers'
+export type { MatchOutcome, MatchResult } from '../gameplay/global-win'
 export type {
   WitchCheckpointResult,
   WitchDecision,
@@ -257,6 +259,7 @@ export interface RoomState {
   dayVote: DayVoteState | null
   factionTransitions?: FactionTransitionState
   cupidLovers?: CupidLoverState
+  matchResult?: MatchResult | null
   journal: JournalEvent[]
 }
 
@@ -318,4 +321,3 @@ export type RoomCommand =
       alive: boolean
       reason?: string
     }
-  | { type: 'END_MATCH' }

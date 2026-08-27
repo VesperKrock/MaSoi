@@ -270,16 +270,16 @@ describe('MS-1C transport and private projection contract', () => {
     await transport.dispatch(room.id, { type: 'FINALIZE_NIGHT_CHECKPOINT' })
 
     expect(rpc.mock.calls).toEqual([
-      ['ms1f_open_witch_call', { p_room_id: room.id }],
+      ['ms1g2_open_witch_call', { p_room_id: room.id }],
       [
-        'ms1c_submit_witch_decision',
+        'ms1g2_submit_witch_decision',
         {
           p_room_id: room.id,
           p_resurrection_target_id: players[0].id,
           p_poison_target_id: null,
         },
       ],
-      ['ms1f_finalize_night_checkpoint', { p_room_id: room.id }],
+      ['ms1g2_finalize_night_checkpoint', { p_room_id: room.id }],
     ])
   })
 })

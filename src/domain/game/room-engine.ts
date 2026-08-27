@@ -39,6 +39,12 @@ import {
   stabilizeDeathConsequences,
 } from '../gameplay/lovers'
 import {
+  resolveFoolHanging,
+  resolveGlobalWin,
+  type GlobalWinResolution,
+  type MatchFinishTrigger,
+} from '../gameplay/global-win'
+import {
   finalizeWitchCheckpoint,
   getWitchCapabilities,
   validateWitchDecision,
@@ -205,6 +211,7 @@ export function createProductRoom(
     dayVote: null,
     factionTransitions: createInitialFactionTransitionState([]),
     cupidLovers: createInitialCupidLoverState([], environment.now()),
+    matchResult: null,
     journal: [],
   }
   appendEvent(state, environment, 'ROOM_CREATED', {
@@ -266,6 +273,7 @@ export function createDemoRoom(
       roleAssignments,
       environment.now(),
     ),
+    matchResult: null,
     journal: [],
   }
 
@@ -441,6 +449,59 @@ function applyCupidObjectiveReconciliation(
   }
 }
 
+function finishMatch(
+  state: RoomState,
+  resolution: Exclude<GlobalWinResolution, { outcome: null }>,
+  trigger: MatchFinishTrigger,
+  environment: GameEnvironment,
+): void {
+  if (state.matchResult) return
+  if (state.phase !== 'NIGHT' && state.phase !== 'DAY') {
+    fail('Chỉ có thể chốt kết quả tại checkpoint Đêm hoặc Ngày ổn định.')
+  }
+  const finishedPhase = state.phase
+  state.matchResult = {
+    outcome: resolution.outcome,
+    finishedAt: environment.now(),
+    finishedPhase,
+    dayNumber: state.dayNumber,
+    trigger,
+    subjectPlayerIds: [...resolution.subjectPlayerIds],
+  }
+  appendEvent(state, environment, 'FINAL_RESULT', {
+    resolution: resolution.outcome,
+    metadata: {
+      trigger,
+      subjectPlayerIds: resolution.subjectPlayerIds,
+      message:
+        resolution.outcome === 'DRAW' ? 'Cả làng bị xóa sổ.' : undefined,
+    },
+  })
+  state.phase = 'ENDED'
+  state.lifecycle = 'FINISHED'
+  appendEvent(state, environment, 'MATCH_ENDED', {
+    resolution: resolution.outcome,
+    metadata: { trigger, finishedPhase },
+  })
+}
+
+function resolveGlobalWinAtCheckpoint(
+  state: RoomState,
+  trigger: Exclude<MatchFinishTrigger, 'FOOL_DAY_HANGING'>,
+  environment: GameEnvironment,
+): void {
+  if (state.matchResult) return
+  const resolution = resolveGlobalWin({
+    players: state.players,
+    assignments: state.roleAssignments,
+    factionTransitions: state.factionTransitions,
+    cupidLovers: state.cupidLovers,
+  })
+  if (resolution.outcome) {
+    finishMatch(state, resolution, trigger, environment)
+  }
+}
+
 function applyDayHeartbreakConsequences(
   state: RoomState,
   initialFinalDeaths: readonly { playerId: PlayerId; sourceEffectIds: string[] }[],
@@ -564,7 +625,7 @@ function finalizeWolfAction(
   finishCall(state, 'werewolf', environment)
 }
 
-function startNight(state: RoomState, environment: GameEnvironment): void {
+function startNight(state: RoomState, environment: GameEnvironment): boolean {
   if (state.phase !== 'SETUP' && state.phase !== 'DAY') {
     fail('Chỉ có thể bắt đầu đêm từ khâu chuẩn bị hoặc ban ngày.')
   }
@@ -593,6 +654,12 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
   }
   state.phase = 'NIGHT'
   applyFactionReconciliation(state, 'START_NIGHT', environment)
+  appendEvent(state, environment, 'PHASE_CHANGED', {
+    resolution: 'NIGHT',
+    metadata: { from: previousPhase, to: 'NIGHT' },
+  })
+  resolveGlobalWinAtCheckpoint(state, 'START_NIGHT', environment)
+  if (state.matchResult) return false
   state.dayVote = null
   state.nightResolution = null
   state.witchCheckpoint = null
@@ -602,10 +669,7 @@ function startNight(state: RoomState, environment: GameEnvironment): void {
     activeRoleId: null,
     actionsByRole: {},
   }
-  appendEvent(state, environment, 'PHASE_CHANGED', {
-    resolution: 'NIGHT',
-    metadata: { from: previousPhase, to: 'NIGHT' },
-  })
+  return true
 }
 
 function callNightRole(
@@ -1792,6 +1856,7 @@ function finalizeNightCheckpoint(
       phaseTransitioned: false,
     },
   })
+  resolveGlobalWinAtCheckpoint(state, 'NIGHT_STABILIZED', environment)
 }
 
 function startDay(state: RoomState, environment: GameEnvironment): void {
@@ -1929,6 +1994,19 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
       resolution: 'DAY_HANGING',
       metadata: { sourceEffectId: effect.id },
     })
+    const foolResult = resolveFoolHanging(
+      {
+        players: state.players,
+        assignments: state.roleAssignments,
+        factionTransitions: state.factionTransitions,
+        cupidLovers: state.cupidLovers,
+      },
+      targetId,
+    )
+    if (foolResult.outcome === 'FOOL') {
+      finishMatch(state, foolResult, 'FOOL_DAY_HANGING', environment)
+      return
+    }
     applyDayHeartbreakConsequences(
       state,
       [{ playerId: targetId, sourceEffectIds: [effect.id] }],
@@ -1946,6 +2024,9 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
         resolution: 'REVENGE_PENDING',
       })
     }
+  }
+  if (state.dayVote.hunterRevenge?.status !== 'PENDING') {
+    resolveGlobalWinAtCheckpoint(state, 'DAY_STABILIZED', environment)
   }
 }
 
@@ -2004,6 +2085,7 @@ function submitHunterRevenge(
     targetPlayerId: targetId ?? undefined,
     resolution: targetId ? 'TARGET_KILLED' : 'NOBODY',
   })
+  resolveGlobalWinAtCheckpoint(state, 'DAY_STABILIZED', environment)
 }
 
 function setPlayerAlive(
@@ -2043,6 +2125,9 @@ export function applyRoomCommand(
   command: RoomCommand,
   environment: GameEnvironment = defaultGameEnvironment,
 ): RoomState {
+  if (currentState.lifecycle === 'FINISHED' || currentState.matchResult) {
+    fail('MATCH_FINISHED')
+  }
   if (command.type === 'RESET_ROOM') {
     const reset = createDemoRoom(
       command.playerCount,
@@ -2208,11 +2293,12 @@ export function applyRoomCommand(
       break
     case 'START_NEXT_NIGHT':
       if (state.phase === 'NIGHT') break
-      startNight(state, environment)
-      appendEvent(state, environment, 'NEXT_NIGHT_STARTED', {
-        resolution: `NIGHT_${state.dayNumber}`,
-        metadata: { automaticRoleCall: false },
-      })
+      if (startNight(state, environment)) {
+        appendEvent(state, environment, 'NEXT_NIGHT_STARTED', {
+          resolution: `NIGHT_${state.dayNumber}`,
+          metadata: { automaticRoleCall: false },
+        })
+      }
       break
     case 'MODERATOR_SET_ALIVE':
       setPlayerAlive(
@@ -2223,15 +2309,6 @@ export function applyRoomCommand(
         environment,
       )
       break
-    case 'END_MATCH': {
-      const from = state.phase
-      state.phase = 'ENDED'
-      state.lifecycle = 'FINISHED'
-      appendEvent(state, environment, 'MATCH_ENDED', {
-        metadata: { from },
-      })
-      break
-    }
   }
 
   return state

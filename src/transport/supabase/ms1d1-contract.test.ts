@@ -254,13 +254,13 @@ describe('MS-1D1 transport and private projection contract', () => {
     await transport.dispatch(room.id, { type: 'START_DAY' })
 
     expect(rpc.mock.calls).toEqual([
-      ['ms1d1_open_hunter_call', { p_room_id: room.id }],
+      ['ms1g2_open_hunter_call', { p_room_id: room.id }],
       [
-        'ms1d1_submit_hunter_prelock',
+        'ms1g2_submit_hunter_prelock',
         { p_room_id: room.id, p_target_player_id: null },
       ],
-      ['ms1d1_confirm_hunter_prelock', { p_room_id: room.id }],
-      ['ms1d1_start_morning', { p_room_id: room.id }],
+      ['ms1g2_confirm_hunter_prelock', { p_room_id: room.id }],
+      ['ms1g2_start_morning', { p_room_id: room.id }],
     ])
   })
 })

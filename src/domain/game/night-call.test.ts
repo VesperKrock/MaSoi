@@ -80,7 +80,15 @@ function completeLivingSeerCall(
 describe('dead-role nightly call secrecy', () => {
   it('keeps dead Seer in the next-night ritual without activating any player', () => {
     const { environment, advance } = deterministicEnvironment()
-    let state = createDemoRoom(6, 'RANDOM_ON_TIE', environment)
+    // Seven seats keep the game non-terminal after the two setup deaths; G2
+    // correctly ends the former six-seat fixture at Wolf parity.
+    let state = createDemoRoom(7, 'RANDOM_ON_TIE', environment)
+    // This legacy ritual test intentionally spans two complete Nights. A
+    // living Solo holder prevents G2 parity from terminating its fixture;
+    // Serial Killer calls are not configured here, so the tested call list is
+    // still exactly Werewolf + Seer.
+    state.roleAssignments[state.roleAssignments.length - 1].roleId =
+      'serial-killer'
     const seerId = state.roleAssignments.find(
       (assignment) => assignment.roleId === 'seer',
     )?.playerId

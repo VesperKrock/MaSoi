@@ -248,7 +248,7 @@ describe('MS-1B2 transport/projection boundary', () => {
 
     await transport.dispatch(room.id, { type: 'RESOLVE_NIGHT_EFFECTS' })
 
-    expect(rpc).toHaveBeenCalledWith('ms1b2_resolve_night_effects', {
+    expect(rpc).toHaveBeenCalledWith('ms1g2_resolve_night_effects', {
       p_room_id: room.id,
     })
     expect(JSON.stringify(rpc.mock.calls)).not.toContain('target')

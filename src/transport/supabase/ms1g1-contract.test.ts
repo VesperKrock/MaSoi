@@ -139,14 +139,14 @@ describe('MS-1G1 Supabase authority boundary', () => {
       playerId: 'ignored-client-player',
     })
 
-    expect(rpc).toHaveBeenNthCalledWith(1, 'ms1g1_open_serial_killer_call', {
+    expect(rpc).toHaveBeenNthCalledWith(1, 'ms1g2_open_serial_killer_call', {
       p_room_id: room.id,
     })
-    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1g1_submit_serial_killer_intent', {
+    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1g2_submit_serial_killer_intent', {
       p_room_id: room.id,
       p_target_player_id: 'target',
     })
-    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1g1_confirm_serial_killer_intent', {
+    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1g2_confirm_serial_killer_intent', {
       p_room_id: room.id,
     })
     expect(JSON.stringify(rpc.mock.calls)).not.toMatch(

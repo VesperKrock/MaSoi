@@ -31,6 +31,7 @@ import type {
   RoomCommand,
   RoomLifecycle,
   RoomState,
+  MatchResult,
 } from '../../domain/game/types'
 import type {
   PlayerRoomSnapshot,
@@ -183,6 +184,11 @@ Object.assign(serverMessages, {
     'Hành động của Sát Nhân Hàng Loạt trong Đêm này đã được xác nhận.',
 })
 
+Object.assign(serverMessages, {
+  MATCH_FINISHED:
+    'Ván chơi đã kết thúc; không thể thực hiện thêm hành động.',
+})
+
 const machineCodes = new Set(Object.keys(serverMessages))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -253,6 +259,29 @@ function readRemotePlayer(value: unknown): Player {
     seat: Number(value.seat),
     alias: String(value.displayName ?? ''),
     alive: value.alive !== false,
+  }
+}
+
+function readMatchResult(value: unknown): MatchResult | null {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)) throw new Error('BACKEND_UNAVAILABLE')
+  const outcome = value.outcome
+  const trigger = value.trigger
+  if (
+    outcome !== 'FOOL' && outcome !== 'WOLF' && outcome !== 'COUPLE' &&
+    outcome !== 'SERIAL_KILLER' && outcome !== 'VILLAGE' && outcome !== 'DRAW'
+  ) throw new Error('BACKEND_UNAVAILABLE')
+  if (
+    trigger !== 'FOOL_DAY_HANGING' && trigger !== 'NIGHT_STABILIZED' &&
+    trigger !== 'DAY_STABILIZED' && trigger !== 'START_NIGHT'
+  ) throw new Error('BACKEND_UNAVAILABLE')
+  return {
+    outcome,
+    trigger,
+    finishedAt: parseTimestamp(value.finishedAt),
+    finishedPhase: value.finishedPhase === 'DAY' ? 'DAY' : 'NIGHT',
+    dayNumber: Number(value.dayNumber),
+    subjectPlayerIds: [],
   }
 }
 
@@ -1145,6 +1174,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
       ),
     ),
     cupidLovers: readCupidLovers(value.cupidLovers),
+    matchResult: readMatchResult(value.matchResult),
     journal: [
       ...lifecycleJournal(payload),
       ...(value.night ? readRemoteNight(value.night).events : []),
@@ -1170,6 +1200,7 @@ export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
       ? undefined
       : readRoleId(isRecord(assignment) ? assignment.roleId : undefined)
   const role = roleId ? classicRoleById[roleId] : undefined
+  const matchResult = readMatchResult(value.matchResult)
   return {
     audience: 'PLAYER',
     revision: room.revision,
@@ -1179,6 +1210,7 @@ export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
     seatCount: room.seatCount,
     phase: room.phase,
     dayNumber: room.dayNumber,
+    matchResult: matchResult ? { outcome: matchResult.outcome } : undefined,
     self,
     players,
     roleIdentity: role
@@ -1415,62 +1447,62 @@ export class SupabaseRoomTransport implements RoomTransport {
       } else if (command.type === 'CONFIRM_ROLE_REVEAL') {
         functionName = 'ms1a_confirm_role_reveal'
       } else if (command.type === 'START_NIGHT') {
-        functionName = 'ms1a_start_room'
+        functionName = 'ms1g2_start_room'
       } else if (command.type === 'CALL_NIGHT_ROLE') {
         functionName =
           command.roleId === 'witch'
-            ? 'ms1f_open_witch_call'
+            ? 'ms1g2_open_witch_call'
             : command.roleId === 'hunter'
-              ? 'ms1d1_open_hunter_call'
+              ? 'ms1g2_open_hunter_call'
             : command.roleId === 'cupid'
-              ? 'ms1f_open_cupid_call'
+              ? 'ms1g2_open_cupid_call'
               : command.roleId === 'serial-killer'
-                ? 'ms1g1_open_serial_killer_call'
-            : 'ms1b1_open_night_role_call'
+                ? 'ms1g2_open_serial_killer_call'
+            : 'ms1g2_open_night_role_call'
       } else if (command.type === 'CAST_WOLF_VOTE') {
-        functionName = 'ms1b1_submit_wolf_ballot'
+        functionName = 'ms1g2_submit_wolf_ballot'
       } else if (command.type === 'CONFIRM_NIGHT_ACTION') {
-        functionName = 'ms1b1_confirm_wolf_ballot'
+        functionName = 'ms1g2_confirm_wolf_ballot'
       } else if (command.type === 'RESOLVE_WOLF_VOTE') {
-        functionName = 'ms1b1_finalize_wolf_round'
+        functionName = 'ms1g2_finalize_wolf_round'
       } else if (command.type === 'COMPLETE_NIGHT_CALL') {
-        functionName = 'ms1b1_complete_empty_night_role_call'
+        functionName = 'ms1g2_complete_empty_night_role_call'
       } else if (command.type === 'SUBMIT_SEER_INSPECTION') {
-        functionName = 'ms1b1_submit_seer_inspection'
+        functionName = 'ms1g2_submit_seer_inspection'
       } else if (command.type === 'ACKNOWLEDGE_SEER_RESULT') {
-        functionName = 'ms1b1_acknowledge_seer_result'
+        functionName = 'ms1g2_acknowledge_seer_result'
       } else if (command.type === 'SUBMIT_PROTECTOR_TARGET') {
-        functionName = 'ms1b1_submit_protector_target'
+        functionName = 'ms1g2_submit_protector_target'
       } else if (command.type === 'CAST_HUNTER_PRELOCK') {
-        functionName = 'ms1d1_submit_hunter_prelock'
+        functionName = 'ms1g2_submit_hunter_prelock'
       } else if (command.type === 'CONFIRM_HUNTER_PRELOCK') {
-        functionName = 'ms1d1_confirm_hunter_prelock'
+        functionName = 'ms1g2_confirm_hunter_prelock'
       } else if (command.type === 'CAST_SERIAL_KILLER_ATTACK') {
-        functionName = 'ms1g1_submit_serial_killer_intent'
+        functionName = 'ms1g2_submit_serial_killer_intent'
       } else if (command.type === 'CONFIRM_SERIAL_KILLER_ATTACK') {
-        functionName = 'ms1g1_confirm_serial_killer_intent'
+        functionName = 'ms1g2_confirm_serial_killer_intent'
       } else if (command.type === 'RESOLVE_NIGHT_EFFECTS') {
-        functionName = 'ms1b2_resolve_night_effects'
+        functionName = 'ms1g2_resolve_night_effects'
       } else if (command.type === 'SUBMIT_WITCH_DECISION') {
-        functionName = 'ms1c_submit_witch_decision'
+        functionName = 'ms1g2_submit_witch_decision'
       } else if (command.type === 'FINALIZE_NIGHT_CHECKPOINT') {
-        functionName = 'ms1f_finalize_night_checkpoint'
+        functionName = 'ms1g2_finalize_night_checkpoint'
       } else if (command.type === 'START_DAY') {
-        functionName = 'ms1d1_start_morning'
+        functionName = 'ms1g2_start_morning'
       } else if (command.type === 'OPEN_DAY_VOTE') {
-        functionName = 'ms1d2_start_day_vote'
+        functionName = 'ms1g2_start_day_vote'
       } else if (command.type === 'CAST_DAY_VOTE') {
-        functionName = 'ms1d2_cast_day_vote'
+        functionName = 'ms1g2_cast_day_vote'
       } else if (command.type === 'CLOSE_DAY_VOTE') {
-        functionName = 'ms1f_resolve_day_vote'
+        functionName = 'ms1g2_resolve_day_vote'
       } else if (command.type === 'SUBMIT_HUNTER_REVENGE') {
-        functionName = 'ms1f_submit_hunter_revenge'
+        functionName = 'ms1g2_submit_hunter_revenge'
       } else if (command.type === 'START_NEXT_NIGHT') {
-        functionName = 'ms1f_start_next_night'
+        functionName = 'ms1g2_start_next_night'
       } else if (command.type === 'SUBMIT_CUPID_PAIRING') {
-        functionName = 'ms1f_submit_cupid_pairing'
+        functionName = 'ms1g2_submit_cupid_pairing'
       } else if (command.type === 'ACKNOWLEDGE_LOVER_REVEAL') {
-        functionName = 'ms1f_acknowledge_lover_reveal'
+        functionName = 'ms1g2_acknowledge_lover_reveal'
       } else {
         return failure(new Error('SERVER_GAMEPLAY_UNAVAILABLE'))
       }

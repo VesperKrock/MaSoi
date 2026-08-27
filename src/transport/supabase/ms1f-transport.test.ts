@@ -170,22 +170,22 @@ describe('MS-1F Supabase transport boundary', () => {
     })
     await transport.dispatch(room.id, { type: 'START_NEXT_NIGHT' })
 
-    expect(rpc).toHaveBeenNthCalledWith(1, 'ms1f_submit_cupid_pairing', {
+    expect(rpc).toHaveBeenNthCalledWith(1, 'ms1g2_submit_cupid_pairing', {
       p_room_id: room.id,
       p_first_target_player_id: 'lover-a',
       p_second_target_player_id: 'lover-b',
     })
-    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1f_finalize_night_checkpoint', {
+    expect(rpc).toHaveBeenNthCalledWith(2, 'ms1g2_finalize_night_checkpoint', {
       p_room_id: room.id,
     })
-    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1f_resolve_day_vote', {
+    expect(rpc).toHaveBeenNthCalledWith(3, 'ms1g2_resolve_day_vote', {
       p_room_id: room.id,
     })
-    expect(rpc).toHaveBeenNthCalledWith(4, 'ms1f_submit_hunter_revenge', {
+    expect(rpc).toHaveBeenNthCalledWith(4, 'ms1g2_submit_hunter_revenge', {
       p_room_id: room.id,
       p_target_player_id: 'lover-a',
     })
-    expect(rpc).toHaveBeenNthCalledWith(5, 'ms1f_start_next_night', {
+    expect(rpc).toHaveBeenNthCalledWith(5, 'ms1g2_start_next_night', {
       p_room_id: room.id,
     })
     expect(JSON.stringify(rpc.mock.calls)).not.toMatch(

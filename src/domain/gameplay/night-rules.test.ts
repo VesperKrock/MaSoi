@@ -68,6 +68,7 @@ describe('MS-1B1 Seer detection', () => {
     ['traitor', 'NON_WOLF'],
     ['half-wolf', 'NON_WOLF'],
     ['serial-killer', 'NON_WOLF'],
+    ['fool', 'NON_WOLF'],
     ['villager', 'NON_WOLF'],
   ] as const)('maps %s to %s', (roleId, expected) => {
     expect(detectForSeer(roleId)).toBe(expected)

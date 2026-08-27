@@ -67,6 +67,9 @@ export interface PlayerRoomSnapshot {
   seatCount: number
   phase: RoomState['phase']
   dayNumber: number
+  matchResult?: {
+    outcome: NonNullable<RoomState['matchResult']>['outcome']
+  }
   self: Player
   players: Player[]
   roleIdentity?: {
@@ -271,6 +274,9 @@ export function projectRoomSnapshot(
     seatCount: state.config.seatCount,
     phase: state.phase,
     dayNumber: state.dayNumber,
+    matchResult: state.matchResult
+      ? { outcome: state.matchResult.outcome }
+      : undefined,
     self: projectedSelf,
     players: projectedPlayers,
     roleIdentity:

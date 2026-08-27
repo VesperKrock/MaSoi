@@ -257,7 +257,7 @@ describe('MS-1B1 Supabase transport projection and dispatch', () => {
       playerId: 'forged-player-id',
       targetId: players[1].id,
     })
-    expect(rpc).toHaveBeenCalledWith('ms1b1_submit_seer_inspection', {
+    expect(rpc).toHaveBeenCalledWith('ms1g2_submit_seer_inspection', {
       p_room_id: room.id,
       p_target_player_id: players[1].id,
     })
