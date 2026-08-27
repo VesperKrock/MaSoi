@@ -39,6 +39,7 @@ function RoomExperience({
     roomId,
     stableAudience,
   )
+  const homeHref = appUrl(transport.kind === 'LOCAL' ? '?transport=local' : '')
 
   if (!snapshot) {
     return (
@@ -69,7 +70,11 @@ function RoomExperience({
             {error}
           </div>
         )}
-        <PlayerView snapshot={snapshot} dispatch={dispatch} />
+        <PlayerView
+          snapshot={snapshot}
+          dispatch={dispatch}
+          homeHref={homeHref}
+        />
       </>
     )
   }
@@ -82,7 +87,12 @@ function RoomExperience({
           <button onClick={clearError} aria-label="Đóng thông báo lỗi">×</button>
         </div>
       )}
-      <ModeratorView state={snapshot.state} dispatch={dispatch} />
+      <ModeratorView
+        state={snapshot.state}
+        dispatch={dispatch}
+        endMatch={snapshot.endMatch}
+        homeHref={homeHref}
+      />
     </AppShell>
   )
 }

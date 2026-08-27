@@ -11,10 +11,14 @@ import { getNightResolutionReadiness } from '../../domain/gameplay/night-resolut
 import { getDayVoteWeight, resolveDayVote } from '../../domain/voting/day-vote'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
 import { getPreWitchNightRoleIds } from '../../domain/roles/role-definitions'
+import type { EndMatchSnapshot } from '../../domain/gameplay/end-match'
+import { ModeratorEndMatch } from '../end-match/end-match-view'
 
 interface ModeratorViewProps {
   state: RoomState
   dispatch: (command: RoomCommand) => Promise<boolean>
+  endMatch?: EndMatchSnapshot
+  homeHref?: string
 }
 
 function useCountdownSeconds(deadlineAt: number | undefined) {
@@ -911,7 +915,15 @@ function Journal({ state }: { state: RoomState }) {
   )
 }
 
-export function ModeratorView({ state, dispatch }: ModeratorViewProps) {
+export function ModeratorView({
+  state,
+  dispatch,
+  endMatch,
+  homeHref = '/',
+}: ModeratorViewProps) {
+  if (state.lifecycle === 'FINISHED' && endMatch) {
+    return <ModeratorEndMatch endMatch={endMatch} homeHref={homeHref} />
+  }
   if (state.lifecycle === 'LOBBY') {
     return <ModeratorLobby state={state} dispatch={dispatch} />
   }

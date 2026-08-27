@@ -23,10 +23,9 @@ const historicalHashes = new Map([
 ])
 
 describe('MS-1G2 server contract', () => {
-  it('preserves all nine historical migrations and adds exactly one G2 forward migration', () => {
+  it('preserves all nine pre-G2 migrations and keeps G2 as the tenth migration', () => {
     const files = readdirSync('supabase/migrations').filter((file) => file.endsWith('.sql')).sort()
-    expect(files).toHaveLength(10)
-    expect(files.at(-1)).toBe('20260827130000_ms1g2_fool_global_win_engine.sql')
+    expect(files[9]).toBe('20260827130000_ms1g2_fool_global_win_engine.sql')
     for (const [file, expected] of historicalHashes) {
       const hash = createHash('sha256')
         .update(readFileSync(`supabase/migrations/${file}`))

@@ -60,6 +60,8 @@ const defaultSurfaces = [
   'day-dead',
   'day-living',
   'role-recheck',
+  'end-match-result',
+  'end-match-roster',
 ]
 const requestedSurfaces = process.argv.slice(2)
 const surfaces = requestedSurfaces.length > 0 ? requestedSurfaces : defaultSurfaces
@@ -79,6 +81,21 @@ async function openSurface(page, surface) {
   if (surface === 'role-recheck') {
     await page.click('.quiet-action')
     await page.waitForSelector('[data-surface="recheck"]')
+  }
+  if (surface === 'end-match-roster') {
+    await page.click('.end-match-actions .button.primary')
+    await page.waitForSelector('[data-surface="end-match-roster"]')
+    const firstPage = await page.$eval('.final-pagination strong', (node) => node.textContent?.trim())
+    const firstPageRows = await page.$$eval('.final-roster-row', (rows) => rows.length)
+    if (firstPage !== 'Trang 1 / 2' || firstPageRows !== 8) {
+      throw new Error(`Final roster pagination is invalid: ${firstPage}, rows=${firstPageRows}.`)
+    }
+    await page.click('.final-pagination .button:last-child')
+    await page.waitForFunction(() => document.querySelector('.final-pagination strong')?.textContent?.trim() === 'Trang 2 / 2')
+    const secondPageRows = await page.$$eval('.final-roster-row', (rows) => rows.length)
+    if (secondPageRows !== 8) {
+      throw new Error(`Final roster second page has ${secondPageRows} rows instead of 8.`)
+    }
   }
   if (surface === 'reveal' || surface === 'role-recheck') {
     await page.waitForFunction(() => {

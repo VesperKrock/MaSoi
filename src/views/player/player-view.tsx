@@ -5,11 +5,15 @@ import type {
   PlayerActionSnapshot,
   PlayerRoomSnapshot,
 } from '../../state/room-projection'
+import { PlayerEndMatch } from '../end-match/end-match-view'
 
 interface PlayerViewProps {
   snapshot: PlayerRoomSnapshot
   dispatch: (command: RoomCommand) => Promise<boolean>
+  homeHref: string
 }
+
+type PlayerGameplayProps = Pick<PlayerViewProps, 'snapshot' | 'dispatch'>
 
 function useCountdownSeconds(deadlineAt: number | undefined) {
   const [seconds, setSeconds] = useState(() =>
@@ -45,7 +49,7 @@ function RoleIdentityCard({
   mode,
   onClose,
   dispatch,
-}: PlayerViewProps & { mode: 'REVEAL' | 'RECHECK'; onClose?: () => void }) {
+}: PlayerGameplayProps & { mode: 'REVEAL' | 'RECHECK'; onClose?: () => void }) {
   const role = snapshot.roleIdentity
   if (!role) return null
 
@@ -190,7 +194,7 @@ function WitchDecisionView({
   action,
   snapshot,
   dispatch,
-}: PlayerViewProps & { action: PlayerActionSnapshot }) {
+}: PlayerGameplayProps & { action: PlayerActionSnapshot }) {
   const [mode, setMode] = useState<'RESURRECTION' | 'POISON'>(
     action.resurrectionAvailable ? 'RESURRECTION' : 'POISON',
   )
@@ -296,7 +300,7 @@ function WitchDecisionView({
   )
 }
 
-function CupidPairingView({ snapshot, dispatch }: PlayerViewProps) {
+function CupidPairingView({ snapshot, dispatch }: PlayerGameplayProps) {
   const action = snapshot.nightAction
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>(
     action?.selectedTargetIds ?? [],
@@ -352,7 +356,7 @@ function CupidPairingView({ snapshot, dispatch }: PlayerViewProps) {
   )
 }
 
-function LoverRevealView({ snapshot, dispatch }: PlayerViewProps) {
+function LoverRevealView({ snapshot, dispatch }: PlayerGameplayProps) {
   const relationship = snapshot.loverRelationship
   if (!relationship?.revealPending) return null
   return (
@@ -378,7 +382,7 @@ function LoverRevealView({ snapshot, dispatch }: PlayerViewProps) {
   )
 }
 
-function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
+function NightActionView({ snapshot, dispatch }: PlayerGameplayProps) {
   const action = snapshot.nightAction
   if (!action) return null
   if (action.mode === 'CUPID_PAIRING') {
@@ -590,7 +594,7 @@ function NightActionView({ snapshot, dispatch }: PlayerViewProps) {
   )
 }
 
-function DayVoteView({ snapshot, dispatch }: PlayerViewProps) {
+function DayVoteView({ snapshot, dispatch }: PlayerGameplayProps) {
   const vote = snapshot.dayVote
   const secondsLeft = useCountdownSeconds(vote?.deadlineAt)
   if (!vote || vote.status !== 'OPEN' || !snapshot.self.alive) return null
@@ -637,7 +641,7 @@ function DayVoteView({ snapshot, dispatch }: PlayerViewProps) {
   )
 }
 
-function HunterRevengeView({ snapshot, dispatch }: PlayerViewProps) {
+function HunterRevengeView({ snapshot, dispatch }: PlayerGameplayProps) {
   const action = snapshot.dayVote?.hunterRevengeAction
   const [targetId, setTargetId] = useState<string | null | undefined>(undefined)
   if (!action) return null
@@ -683,10 +687,17 @@ function HunterRevengeView({ snapshot, dispatch }: PlayerViewProps) {
   )
 }
 
-export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
+export function PlayerView({ snapshot, dispatch, homeHref }: PlayerViewProps) {
   const [rechecking, setRechecking] = useState(false)
+  const [endRevealOpen, setEndRevealOpen] = useState(false)
+  const isEndMatch =
+    snapshot.lifecycle === 'FINISHED' && Boolean(snapshot.endMatch)
   const activeSurface =
-    snapshot.lifecycle === 'LOBBY'
+    isEndMatch
+      ? endRevealOpen
+        ? 'END-MATCH-ROSTER'
+        : 'END-MATCH-RESULT'
+      : snapshot.lifecycle === 'LOBBY'
       ? 'LOBBY'
       : rechecking
         ? 'RECHECK'
@@ -713,11 +724,19 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
         <strong>{playerLabel(snapshot.self)}</strong>
       </div>
       <div className="player-stage">
-        {activeSurface === 'LOBBY' && <PlayerLobby snapshot={snapshot} />}
-        {activeSurface === 'REVEAL' && (
+        {isEndMatch && snapshot.endMatch && (
+          <PlayerEndMatch
+            endMatch={snapshot.endMatch}
+            revealOpen={endRevealOpen}
+            onRevealOpenChange={setEndRevealOpen}
+            homeHref={homeHref}
+          />
+        )}
+        {!isEndMatch && activeSurface === 'LOBBY' && <PlayerLobby snapshot={snapshot} />}
+        {!isEndMatch && activeSurface === 'REVEAL' && (
           <RoleIdentityCard snapshot={snapshot} dispatch={dispatch} mode="REVEAL" />
         )}
-        {activeSurface === 'RECHECK' && (
+        {!isEndMatch && activeSurface === 'RECHECK' && (
           <RoleIdentityCard
             snapshot={snapshot}
             dispatch={dispatch}
@@ -725,19 +744,19 @@ export function PlayerView({ snapshot, dispatch }: PlayerViewProps) {
             onClose={() => setRechecking(false)}
           />
         )}
-        {activeSurface === 'LOVER_REVEAL' && (
+        {!isEndMatch && activeSurface === 'LOVER_REVEAL' && (
           <LoverRevealView snapshot={snapshot} dispatch={dispatch} />
         )}
-        {activeSurface === 'NIGHT_ACTION' && (
+        {!isEndMatch && activeSurface === 'NIGHT_ACTION' && (
           <NightActionView snapshot={snapshot} dispatch={dispatch} />
         )}
-        {activeSurface === 'DAY_VOTE' && (
+        {!isEndMatch && activeSurface === 'DAY_VOTE' && (
           <DayVoteView snapshot={snapshot} dispatch={dispatch} />
         )}
-        {activeSurface === 'HUNTER_REVENGE' && (
+        {!isEndMatch && activeSurface === 'HUNTER_REVENGE' && (
           <HunterRevengeView snapshot={snapshot} dispatch={dispatch} />
         )}
-        {activeSurface === 'NEUTRAL' && (
+        {!isEndMatch && activeSurface === 'NEUTRAL' && (
           <NeutralScreen snapshot={snapshot} onRecheck={() => setRechecking(true)} />
         )}
       </div>

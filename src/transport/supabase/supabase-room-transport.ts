@@ -6,6 +6,11 @@ import {
   type FactionTransitionState,
 } from '../../domain/gameplay/faction-transitions'
 import type { CupidLoverState } from '../../domain/gameplay/lovers'
+import type {
+  EndMatchSnapshot,
+  FinalRuntimeNote,
+  FinalRosterEntry,
+} from '../../domain/gameplay/end-match'
 import {
   cardAssetUrl,
   classicRoleById,
@@ -282,6 +287,64 @@ function readMatchResult(value: unknown): MatchResult | null {
     finishedPhase: value.finishedPhase === 'DAY' ? 'DAY' : 'NIGHT',
     dayNumber: Number(value.dayNumber),
     subjectPlayerIds: [],
+  }
+}
+
+function readEndMatch(value: unknown): EndMatchSnapshot | undefined {
+  if (value === null || value === undefined) return undefined
+  if (!isRecord(value)) throw new Error('BACKEND_UNAVAILABLE')
+  const outcome = value.outcome
+  if (
+    outcome !== 'FOOL' && outcome !== 'WOLF' && outcome !== 'COUPLE' &&
+    outcome !== 'SERIAL_KILLER' && outcome !== 'VILLAGE' && outcome !== 'DRAW'
+  ) throw new Error('BACKEND_UNAVAILABLE')
+  if (!Array.isArray(value.subjects) || !Array.isArray(value.roster)) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  const roster = value.roster.map((entry): FinalRosterEntry => {
+    if (!isRecord(entry) || !isRecord(entry.player)) {
+      throw new Error('BACKEND_UNAVAILABLE')
+    }
+    const runtimeNote = entry.runtimeNote
+    if (
+      runtimeNote !== undefined && runtimeNote !== null &&
+      runtimeNote !== 'HALF_WOLF_TRANSFORMED' &&
+      runtimeNote !== 'TRAITOR_CONVERTED_VILLAGE'
+    ) throw new Error('BACKEND_UNAVAILABLE')
+    if (
+      entry.loverPartnerPlayerId !== undefined &&
+      entry.loverPartnerPlayerId !== null &&
+      typeof entry.loverPartnerPlayerId !== 'string'
+    ) throw new Error('BACKEND_UNAVAILABLE')
+    return {
+      player: readRemotePlayer(entry.player),
+      roleId: readRoleId(entry.roleId),
+      runtimeNote: (runtimeNote ?? undefined) as FinalRuntimeNote | undefined,
+      loverPartnerPlayerId:
+        typeof entry.loverPartnerPlayerId === 'string'
+          ? entry.loverPartnerPlayerId
+          : undefined,
+    }
+  })
+  let couple: EndMatchSnapshot['couple']
+  if (value.couple !== null && value.couple !== undefined) {
+    if (
+      !isRecord(value.couple) ||
+      typeof value.couple.cupidPlayerId !== 'string' ||
+      !Array.isArray(value.couple.loverPlayerIds) ||
+      value.couple.loverPlayerIds.length !== 2 ||
+      value.couple.loverPlayerIds.some((entry) => typeof entry !== 'string')
+    ) throw new Error('BACKEND_UNAVAILABLE')
+    couple = {
+      cupidPlayerId: value.couple.cupidPlayerId,
+      loverPlayerIds: value.couple.loverPlayerIds as [string, string],
+    }
+  }
+  return {
+    outcome,
+    subjects: value.subjects.map(readRemotePlayer),
+    roster,
+    couple,
   }
 }
 
@@ -1180,7 +1243,12 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
       ...(value.night ? readRemoteNight(value.night).events : []),
     ],
   }
-  return { audience: 'MODERATOR', state }
+  const endMatch = readEndMatch(value.endMatch)
+  return {
+    audience: 'MODERATOR',
+    state,
+    ...(endMatch ? { endMatch } : {}),
+  }
 }
 
 export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
@@ -1211,6 +1279,7 @@ export function playerSnapshotFromPayload(value: unknown): PlayerRoomSnapshot {
     phase: room.phase,
     dayNumber: room.dayNumber,
     matchResult: matchResult ? { outcome: matchResult.outcome } : undefined,
+    endMatch: readEndMatch(value.endMatch),
     self,
     players,
     roleIdentity: role

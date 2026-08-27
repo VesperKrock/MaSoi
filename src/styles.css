@@ -1857,6 +1857,258 @@ body:has(.zero-scroll-surface) {
   text-align: center;
 }
 
+/* H1 terminal presentation. Player remains one fixed viewport; Moderator may scroll. */
+
+.end-match-player {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.end-result-player {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.end-result-copy {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.end-result-copy .eyebrow {
+  margin: 0;
+}
+
+.end-result-mark {
+  display: grid;
+  width: clamp(54px, 18vw, 78px);
+  aspect-ratio: 1;
+  margin: clamp(8px, 3vh, 18px) 0;
+  place-items: center;
+  border: 1px solid #6f5a2d;
+  border-radius: 50%;
+  color: var(--gold-bright);
+  font-size: clamp(25px, 8vw, 38px);
+}
+
+.end-result-copy h1 {
+  max-width: 520px;
+  margin: 0;
+  font-size: clamp(27px, 8.5vw, 43px);
+  line-height: 1.02;
+}
+
+.end-subjects {
+  display: -webkit-box;
+  max-width: 100%;
+  margin: clamp(8px, 2vh, 14px) 0 0;
+  overflow: hidden;
+  color: var(--gold-bright);
+  font-size: clamp(11px, 3.3vw, 14px);
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.end-match-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.end-match-actions .button,
+.final-pagination .button,
+.final-roster-actions .button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.end-roster-player {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 44px 44px;
+  gap: 5px;
+  padding: 2px 0;
+}
+
+.end-roster-player > header {
+  min-width: 0;
+  text-align: center;
+}
+
+.end-roster-player > header .eyebrow {
+  margin: 0;
+}
+
+.end-roster-player > header h1 {
+  margin: 1px 0 0;
+  font-size: clamp(20px, 6vw, 28px);
+  line-height: 1;
+}
+
+.final-roster-list {
+  display: grid;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 3px;
+  overflow: hidden;
+}
+
+.final-roster-row {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 6px;
+  border: 1px solid #302c26;
+  border-radius: 7px;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(52px, 0.75fr);
+  gap: 6px;
+  align-items: center;
+  background: #15130f;
+}
+
+.final-roster-row.dead {
+  opacity: 0.64;
+}
+
+.final-seat {
+  color: var(--gold);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.final-player-role {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+}
+
+.final-player-role strong,
+.final-player-role span,
+.final-roster-row > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-player-role strong {
+  font-size: clamp(10px, 2.8vw, 12px);
+  line-height: 1.05;
+}
+
+.final-player-role span,
+.final-roster-row > small {
+  color: var(--muted);
+  font-size: clamp(9px, 2.25vw, 10px);
+  line-height: 1.05;
+}
+
+.final-roster-row > small {
+  color: var(--green);
+  text-align: right;
+}
+
+.final-pagination,
+.final-roster-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  min-width: 0;
+  gap: 5px;
+  align-items: center;
+}
+
+.final-pagination strong {
+  min-width: 72px;
+  font-size: 9px;
+  text-align: center;
+}
+
+.final-roster-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.moderator-end-match {
+  display: grid;
+  gap: 14px;
+}
+
+.moderator-end-match .panel {
+  padding: 16px;
+}
+
+.moderator-end-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+}
+
+.moderator-end-result .end-result-copy {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.moderator-end-result .end-result-mark {
+  display: none;
+}
+
+.moderator-end-result .end-result-copy h1 {
+  margin-top: 4px;
+  font-size: clamp(30px, 4vw, 46px);
+}
+
+.moderator-end-result .end-subjects {
+  margin-top: 6px;
+}
+
+.moderator-end-result .button {
+  min-height: 44px;
+}
+
+.moderator-final-roster .section-title > strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moderator-final-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.moderator-final-roster .final-roster-row {
+  min-height: 48px;
+  grid-template-columns: 26px minmax(0, 1fr) minmax(90px, 0.65fr);
+}
+
+@media (max-width: 700px) {
+  .moderator-end-result,
+  .moderator-final-roster-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .moderator-end-result .button {
+    width: 100%;
+  }
+}
+
+@media (max-height: 620px) {
+  .end-result-mark {
+    width: 48px;
+    margin: 6px 0;
+  }
+
+  .end-result-copy h1 {
+    font-size: clamp(24px, 8vw, 34px);
+  }
+}
+
 @media (max-width: 760px) {
   .role-market,
   .room-basics {

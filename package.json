@@ -38,7 +38,9 @@
     "qa:serial-killer-local": "node scripts/serial-killer-supabase-qa.mjs --local",
     "qa:serial-killer-remote": "node scripts/serial-killer-remote-qa.mjs",
     "qa:serial-killer-touch": "node scripts/zero-scroll-qa.mjs serial-killer-action",
-    "qa:win-local": "node scripts/global-win-supabase-qa.mjs --local"
+    "qa:win-local": "node scripts/global-win-supabase-qa.mjs --local",
+    "qa:end-match-local": "node scripts/end-match-supabase-qa.mjs --local",
+    "qa:end-match-touch": "node scripts/zero-scroll-qa.mjs end-match-result end-match-roster"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

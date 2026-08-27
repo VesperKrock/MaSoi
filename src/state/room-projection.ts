@@ -17,6 +17,10 @@ import {
   cardAssetUrl,
   classicRoleById,
 } from '../domain/roles/classic-catalog'
+import {
+  projectEndMatch,
+  type EndMatchSnapshot,
+} from '../domain/gameplay/end-match'
 
 export type RoomAudience =
   | { kind: 'MODERATOR' }
@@ -25,6 +29,7 @@ export type RoomAudience =
 export interface ModeratorRoomSnapshot {
   audience: 'MODERATOR'
   state: RoomState
+  endMatch?: EndMatchSnapshot
 }
 
 export interface PlayerActionSnapshot {
@@ -70,6 +75,7 @@ export interface PlayerRoomSnapshot {
   matchResult?: {
     outcome: NonNullable<RoomState['matchResult']>['outcome']
   }
+  endMatch?: EndMatchSnapshot
   self: Player
   players: Player[]
   roleIdentity?: {
@@ -206,7 +212,12 @@ export function projectRoomSnapshot(
   audience: RoomAudience,
 ): RoomSnapshot {
   if (audience.kind === 'MODERATOR') {
-    return { audience: 'MODERATOR', state: structuredClone(state) }
+    const endMatch = projectEndMatch(state)
+    return {
+      audience: 'MODERATOR',
+      state: structuredClone(state),
+      ...(endMatch ? { endMatch } : {}),
+    }
   }
 
   const self = playerById(state, audience.playerId)
@@ -264,6 +275,7 @@ export function projectRoomSnapshot(
     roleAssignment?.roleId === 'cupid' && state.cupidLovers?.couple
       ? state.cupidLovers.couple.loverPlayerIds
       : null
+  const endMatch = projectEndMatch(state)
 
   return {
     audience: 'PLAYER',
@@ -277,6 +289,7 @@ export function projectRoomSnapshot(
     matchResult: state.matchResult
       ? { outcome: state.matchResult.outcome }
       : undefined,
+    endMatch,
     self: projectedSelf,
     players: projectedPlayers,
     roleIdentity:

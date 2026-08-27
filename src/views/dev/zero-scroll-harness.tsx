@@ -39,7 +39,75 @@ const noOpDispatch = async (command: RoomCommand) => {
   return true
 }
 
+const finalRoleIds = [
+  'werewolf',
+  'fool',
+  'serial-killer',
+  'cupid',
+  'half-wolf',
+  'traitor',
+  'witch',
+  'protector',
+  'seer',
+  'hunter',
+  'mayor',
+  'villager',
+  'villager',
+  'villager',
+  'werewolf',
+  'villager',
+] as const
+
+function finishedSnapshot(playerCount: 7 | 16): PlayerRoomSnapshot {
+  const finalPlayers = players.slice(0, playerCount).map((player, index) => ({
+    ...player,
+    alias: index === 0 ? 'Nguyễn Hoàng Bảo Châu' : `Người chơi ${index + 1}`,
+    alive: index % 3 === 0,
+  }))
+  return {
+    ...baseSnapshot,
+    lifecycle: 'FINISHED',
+    phase: 'ENDED',
+    seatCount: playerCount,
+    self: finalPlayers[0],
+    players: finalPlayers,
+    nightAction: undefined,
+    dayVote: undefined,
+    loverRelationship: undefined,
+    matchResult: { outcome: 'FOOL' },
+    endMatch: {
+      outcome: 'FOOL',
+      subjects: [finalPlayers[1]],
+      roster: finalPlayers.map((player, index) => ({
+        player,
+        roleId: finalRoleIds[index],
+        runtimeNote:
+          finalRoleIds[index] === 'half-wolf'
+            ? 'HALF_WOLF_TRANSFORMED'
+            : finalRoleIds[index] === 'traitor'
+              ? 'TRAITOR_CONVERTED_VILLAGE'
+              : undefined,
+        loverPartnerPlayerId:
+          index === 6
+            ? finalPlayers[7]?.id
+            : index === 7
+              ? finalPlayers[6]?.id
+              : undefined,
+      })),
+      couple:
+        playerCount === 16
+          ? {
+              cupidPlayerId: finalPlayers[3].id,
+              loverPlayerIds: [finalPlayers[6].id, finalPlayers[7].id],
+            }
+          : undefined,
+    },
+  }
+}
+
 function snapshotFor(surface: string): PlayerRoomSnapshot {
+  if (surface === 'end-match-result') return finishedSnapshot(7)
+  if (surface === 'end-match-roster') return finishedSnapshot(16)
   if (surface === 'lobby') {
     return {
       ...baseSnapshot,
@@ -325,6 +393,7 @@ export function ZeroScrollHarness({ surface }: { surface: string }) {
     <PlayerView
       snapshot={snapshotFor(surface)}
       dispatch={noOpDispatch}
+      homeHref="/?transport=local"
     />
   )
 }
