@@ -21,6 +21,10 @@ import {
   projectEndMatch,
   type EndMatchSnapshot,
 } from '../domain/gameplay/end-match'
+import {
+  projectLocalModeratorJournal,
+  type ModeratorJournalSnapshot,
+} from '../domain/gameplay/moderator-journal'
 
 export type RoomAudience =
   | { kind: 'MODERATOR' }
@@ -30,6 +34,7 @@ export interface ModeratorRoomSnapshot {
   audience: 'MODERATOR'
   state: RoomState
   endMatch?: EndMatchSnapshot
+  moderatorJournal: ModeratorJournalSnapshot
 }
 
 export interface PlayerActionSnapshot {
@@ -217,6 +222,7 @@ export function projectRoomSnapshot(
       audience: 'MODERATOR',
       state: structuredClone(state),
       ...(endMatch ? { endMatch } : {}),
+      moderatorJournal: projectLocalModeratorJournal(state),
     }
   }
 

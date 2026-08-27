@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { playerLabel } from '../../components/player-label'
 import type {
   NightAction,
@@ -12,12 +12,15 @@ import { getDayVoteWeight, resolveDayVote } from '../../domain/voting/day-vote'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
 import { getPreWitchNightRoleIds } from '../../domain/roles/role-definitions'
 import type { EndMatchSnapshot } from '../../domain/gameplay/end-match'
+import type { ModeratorJournalSnapshot } from '../../domain/gameplay/moderator-journal'
 import { ModeratorEndMatch } from '../end-match/end-match-view'
+import { ModeratorJournalView } from '../journal/moderator-journal-view'
 
 interface ModeratorViewProps {
   state: RoomState
   dispatch: (command: RoomCommand) => Promise<boolean>
   endMatch?: EndMatchSnapshot
+  moderatorJournal?: ModeratorJournalSnapshot
   homeHref?: string
 }
 
@@ -65,7 +68,13 @@ function factionRuntimeLabel(
   return null
 }
 
-function PhaseHeader({ state }: { state: RoomState }) {
+function PhaseHeader({
+  state,
+  onOpenJournal,
+}: {
+  state: RoomState
+  onOpenJournal: () => void
+}) {
   const label =
     state.phase === 'SETUP'
       ? 'CHUẨN BỊ'
@@ -81,9 +90,14 @@ function PhaseHeader({ state }: { state: RoomState }) {
         <p className="eyebrow">Bảng điều khiển Quản trò</p>
         <h1>{label}</h1>
       </div>
-      <span className={`phase-pill phase-${state.phase.toLowerCase()}`}>
-        {state.phase}
-      </span>
+      <div className="phase-heading-actions">
+        <button className="button ghost" onClick={onOpenJournal}>
+          Nhật ký
+        </button>
+        <span className={`phase-pill phase-${state.phase.toLowerCase()}`}>
+          {state.phase}
+        </span>
+      </div>
     </div>
   )
 }
@@ -882,47 +896,31 @@ function Roster({ state, dispatch }: ModeratorViewProps) {
   )
 }
 
-function Journal({ state }: { state: RoomState }) {
-  const recentEvents = useMemo(() => [...state.journal].reverse(), [state.journal])
-
-  return (
-    <details className="panel journal-panel">
-      <summary>
-        <span>
-          <span className="eyebrow">Development inspector</span>
-          <strong>Match journal</strong>
-        </span>
-        <span>{state.journal.length} events</span>
-      </summary>
-      <div className="journal-list">
-        {recentEvents.map((event) => (
-          <article key={event.id}>
-            <time>{new Date(event.timestamp).toLocaleTimeString('vi-VN')}</time>
-            <div>
-              <strong>{event.type}</strong>
-              <span>
-                {event.actorPlayerId && `actor=${playerName(state, event.actorPlayerId)} `}
-                {event.actorRoleId && `role=${event.actorRoleId} `}
-                {event.targetPlayerId && `target=${playerName(state, event.targetPlayerId)} `}
-                {event.resolution && `result=${event.resolution}`}
-              </span>
-              {event.metadata && <code>{JSON.stringify(event.metadata)}</code>}
-            </div>
-          </article>
-        ))}
-      </div>
-    </details>
-  )
-}
-
 export function ModeratorView({
   state,
   dispatch,
   endMatch,
+  moderatorJournal = { facts: [] },
   homeHref = '/',
 }: ModeratorViewProps) {
+  const [journalOpen, setJournalOpen] = useState(false)
+
+  if (journalOpen) {
+    return (
+      <ModeratorJournalView
+        journal={moderatorJournal}
+        onClose={() => setJournalOpen(false)}
+      />
+    )
+  }
   if (state.lifecycle === 'FINISHED' && endMatch) {
-    return <ModeratorEndMatch endMatch={endMatch} homeHref={homeHref} />
+    return (
+      <ModeratorEndMatch
+        endMatch={endMatch}
+        homeHref={homeHref}
+        onOpenJournal={() => setJournalOpen(true)}
+      />
+    )
   }
   if (state.lifecycle === 'LOBBY') {
     return <ModeratorLobby state={state} dispatch={dispatch} />
@@ -933,7 +931,7 @@ export function ModeratorView({
 
   return (
     <main className="moderator-layout">
-      <PhaseHeader state={state} />
+      <PhaseHeader state={state} onOpenJournal={() => setJournalOpen(true)} />
       <div className="moderator-grid">
         <div className="primary-column">
           {state.phase === 'SETUP' && <SetupPanel state={state} dispatch={dispatch} />}
@@ -944,7 +942,6 @@ export function ModeratorView({
           <Roster state={state} dispatch={dispatch} />
         </aside>
       </div>
-      {import.meta.env.DEV && <Journal state={state} />}
     </main>
   )
 }

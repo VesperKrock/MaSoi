@@ -57,10 +57,9 @@ const matchResult = {
 }
 
 describe('MS-1H1 server and transport contract', () => {
-  it('preserves all ten historical migrations and adds exactly one H1 forward migration', () => {
+  it('preserves all ten historical migrations and keeps H1 at its historical position', () => {
     const files = readdirSync('supabase/migrations').filter((file) => file.endsWith('.sql')).sort()
-    expect(files).toHaveLength(11)
-    expect(files.at(-1)).toBe('20260827170000_ms1h1_end_match_final_reveal.sql')
+    expect(files[10]).toBe('20260827170000_ms1h1_end_match_final_reveal.sql')
     for (const [file, expected] of historicalHashes) {
       const hash = createHash('sha256')
         .update(readFileSync(`supabase/migrations/${file}`))

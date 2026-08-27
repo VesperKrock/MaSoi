@@ -91,6 +91,7 @@ function RoomExperience({
         state={snapshot.state}
         dispatch={dispatch}
         endMatch={snapshot.endMatch}
+        moderatorJournal={snapshot.moderatorJournal}
         homeHref={homeHref}
       />
     </AppShell>

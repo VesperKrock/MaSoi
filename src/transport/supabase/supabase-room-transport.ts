@@ -6,6 +6,11 @@ import {
   type FactionTransitionState,
 } from '../../domain/gameplay/faction-transitions'
 import type { CupidLoverState } from '../../domain/gameplay/lovers'
+import {
+  moderatorJournalFactKinds,
+  type ModeratorJournalFact,
+  type ModeratorJournalSnapshot,
+} from '../../domain/gameplay/moderator-journal'
 import type {
   EndMatchSnapshot,
   FinalRuntimeNote,
@@ -253,6 +258,63 @@ function readStringArray(value: unknown): string[] {
     throw new Error('BACKEND_UNAVAILABLE')
   }
   return value
+}
+
+const moderatorJournalFactKindSet = new Set<string>(moderatorJournalFactKinds)
+
+function readModeratorJournal(value: unknown): ModeratorJournalSnapshot {
+  if (value === null || value === undefined) return { facts: [] }
+  if (!isRecord(value) || !Array.isArray(value.facts)) {
+    throw new Error('BACKEND_UNAVAILABLE')
+  }
+  return {
+    facts: value.facts.map((entry): ModeratorJournalFact => {
+      if (
+        !isRecord(entry) ||
+        typeof entry.id !== 'string' ||
+        typeof entry.kind !== 'string' ||
+        !moderatorJournalFactKindSet.has(entry.kind) ||
+        (entry.phase !== 'NIGHT' && entry.phase !== 'DAY' && entry.phase !== 'RESULT') ||
+        !Number.isInteger(Number(entry.cycleNumber)) ||
+        Number(entry.cycleNumber) < 1
+      ) {
+        throw new Error('BACKEND_UNAVAILABLE')
+      }
+      const totals = entry.totals === undefined
+        ? undefined
+        : Array.isArray(entry.totals)
+          ? entry.totals.map((total) => {
+              if (
+                !isRecord(total) ||
+                typeof total.targetName !== 'string' ||
+                !Number.isFinite(Number(total.total))
+              ) throw new Error('BACKEND_UNAVAILABLE')
+              return {
+                targetName: total.targetName,
+                total: Number(total.total),
+              }
+            })
+          : (() => { throw new Error('BACKEND_UNAVAILABLE') })()
+      return {
+        id: entry.id,
+        kind: entry.kind as ModeratorJournalFact['kind'],
+        phase: entry.phase,
+        cycleNumber: Number(entry.cycleNumber),
+        occurredAt: parseTimestamp(entry.occurredAt),
+        actorName: typeof entry.actorName === 'string' ? entry.actorName : undefined,
+        targetName: typeof entry.targetName === 'string' ? entry.targetName : undefined,
+        relatedNames: entry.relatedNames === undefined
+          ? undefined
+          : readStringArray(entry.relatedNames),
+        resolution: typeof entry.resolution === 'string' ? entry.resolution : undefined,
+        totals,
+        sourceTypes: entry.sourceTypes === undefined
+          ? undefined
+          : readStringArray(entry.sourceTypes),
+        random: entry.random === true,
+      }
+    }),
+  }
 }
 
 function readRemotePlayer(value: unknown): Player {
@@ -1248,6 +1310,7 @@ export function moderatorSnapshotFromPayload(value: unknown): RoomSnapshot {
     audience: 'MODERATOR',
     state,
     ...(endMatch ? { endMatch } : {}),
+    moderatorJournal: readModeratorJournal(value.moderatorJournal),
   }
 }
 
