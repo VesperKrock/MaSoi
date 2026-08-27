@@ -16,6 +16,11 @@
   --amber-dark: #6f5427;
   --red: #c56356;
   --green: #80a174;
+  --type-caption: 11px;
+  --type-meta: 12px;
+  --type-secondary: 13px;
+  --type-compact: 14px;
+  --type-readable: 17px;
 }
 
 * {
@@ -2684,4 +2689,242 @@ body:has(.zero-scroll-surface) {
   .moderator-shell .ritual-note {
     margin-bottom: 8px;
   }
+}
+
+/* MS-UI1 semantic readability tiers.
+   Display headings retain their established scale; operational copy, names,
+   roles, status labels, and compact controls use the shared tiers below. */
+
+.brand small,
+.local-truth,
+.join-card > small {
+  font-size: var(--type-caption);
+  line-height: 1.3;
+}
+
+.eyebrow,
+.phase-pill,
+.policy-chip,
+.selection-meter span,
+.selection-meter small,
+.market-group-heading > span,
+.create-room-footer span,
+.lobby-count span,
+.joined-seat > span,
+.joined-seat small,
+.moderator-final-roster .section-title > strong {
+  font-size: var(--type-meta);
+  line-height: 1.25;
+}
+
+label,
+.button.tiny,
+.hint,
+.ritual-note,
+.call-main > div small,
+.call-status,
+.monitor-line,
+.vote-details > div,
+.action-summary,
+.roster-row > div span,
+.deck-summary > div,
+.journal-panel > summary > span:last-child,
+.market-role details > p,
+.entry-back {
+  font-size: var(--type-secondary);
+}
+
+.button.tiny {
+  line-height: 1.2;
+}
+
+.final-target span,
+.day-result span,
+.day-vote-totals span,
+.journal-list time,
+.journal-list span,
+.journal-list code {
+  font-size: var(--type-meta);
+}
+
+.moderator-journal-section h2 {
+  font-size: 22px;
+}
+
+.moderator-journal-section .section-title span {
+  font-size: var(--type-secondary);
+}
+
+.moderator-journal-section li {
+  font-size: var(--type-readable);
+  line-height: 1.55;
+}
+
+.market-role summary strong {
+  font-size: var(--type-compact);
+  line-height: 1.2;
+}
+
+.market-role summary span {
+  font-size: var(--type-meta);
+  line-height: 1.2;
+}
+
+.market-role details > small {
+  font-size: var(--type-caption);
+}
+
+.singleton-toggle {
+  font-size: var(--type-secondary);
+}
+
+.joined-seat > strong {
+  font-size: var(--type-compact);
+}
+
+.entry-copy > p:last-child,
+.join-card > p {
+  font-size: clamp(14px, 4vw, 16px);
+}
+
+.form-error,
+.inline-error {
+  font-size: var(--type-meta) !important;
+  line-height: 1.35;
+}
+
+.name-modal > p:not(.eyebrow) {
+  font-size: var(--type-compact);
+  line-height: 1.4;
+}
+
+.player-identity {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.player-identity strong {
+  font-size: var(--type-secondary);
+}
+
+.player-center > p:not(.eyebrow) {
+  font-size: clamp(14px, 4vw, 16px);
+  line-height: 1.4;
+}
+
+.player-center > small,
+.quiet-action {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.role-card > span {
+  font-size: 12px;
+}
+
+.target span {
+  font-size: var(--type-meta);
+}
+
+.saved-note {
+  font-size: var(--type-secondary);
+}
+
+.role-identity-surface .eyebrow {
+  font-size: var(--type-caption);
+  line-height: 1;
+}
+
+.role-identity-caption strong {
+  font-size: clamp(17px, 5vw, 21px);
+}
+
+.role-identity-caption span {
+  font-size: var(--type-caption);
+  line-height: 1.15;
+}
+
+.compact-action .eyebrow {
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+.compact-action header > p:last-child {
+  font-size: clamp(11px, 3vw, 12px);
+  line-height: 1.25;
+}
+
+.compact-action .target-total,
+.compact-action .target span {
+  font-size: 10px;
+}
+
+.compact-action .target strong {
+  font-size: clamp(12px, 3.2vw, 13px);
+  line-height: 1.08;
+}
+
+.day-vote-clock {
+  font-size: var(--type-secondary);
+}
+
+.witch-status,
+.witch-choice-summary,
+.witch-no-action {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.vote-save-status {
+  font-size: var(--type-caption) !important;
+}
+
+.player-footer {
+  font-size: 8px;
+}
+
+.player-error {
+  font-size: var(--type-meta);
+  line-height: 1.3;
+}
+
+.end-subjects {
+  font-size: clamp(13px, 3.5vw, 15px);
+}
+
+.final-seat {
+  font-size: var(--type-caption);
+}
+
+.final-player-role strong {
+  font-size: clamp(12px, 3.25vw, 14px);
+  line-height: 1.08;
+}
+
+.final-player-role span,
+.final-roster-row > small {
+  font-size: clamp(11px, 2.75vw, 12px);
+  line-height: 1.08;
+}
+
+.final-pagination strong {
+  font-size: 12px;
+}
+
+.moderator-shell .hint,
+.moderator-shell .ritual-note {
+  font-size: var(--type-secondary);
+}
+
+.lobby-heading h1 > span {
+  font-size: var(--type-meta);
+}
+
+.lobby-heading-status > small,
+.reveal-heading-status > small {
+  font-size: var(--type-caption);
+}
+
+.moderator-shell .market-role summary strong {
+  font-size: var(--type-compact);
 }
