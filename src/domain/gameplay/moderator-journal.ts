@@ -19,6 +19,9 @@ export const moderatorJournalFactKinds = [
   'TRAITOR_CONVERTED_TO_VILLAGE',
   'DAY_VOTE_OPENED',
   'DAY_VOTE_RESOLVED',
+  'DAY_CANDIDATE_LOCKED',
+  'DAY_CANDIDATE_SPARED',
+  'DAY_NO_CANDIDATE',
   'DAY_HANGING_CREATED',
   'HUNTER_REVENGE_RESOLVED',
   'MATCH_FINISHED',
@@ -161,6 +164,12 @@ function factLines(fact: ModeratorJournalFact): string[] {
         ...(result ? [result] : []),
       ]
     }
+    case 'DAY_CANDIDATE_LOCKED':
+      return [`${target} được đưa lên trăng trối.`]
+    case 'DAY_CANDIDATE_SPARED':
+      return [`${target} được tha.`]
+    case 'DAY_NO_CANDIDATE':
+      return ['Không ai được đưa lên trăng trối.']
     case 'DAY_HANGING_CREATED':
       return [`${target} bị treo cổ.`]
     case 'HUNTER_REVENGE_RESOLVED':

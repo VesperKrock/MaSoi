@@ -3506,6 +3506,7 @@ label,
 .offline-night-finalize > h2,
 .offline-morning-checkpoint > h2,
 .offline-day-discussion > h2,
+.offline-day-decision > h2,
 .offline-day-result > h2,
 .offline-hunter-revenge > h2,
 .offline-lovers-reveal > h2 {
@@ -3518,6 +3519,7 @@ label,
 .offline-next-call > p:not(.eyebrow),
 .offline-night-finalize > p:not(.eyebrow),
 .offline-day-discussion > p:not(.eyebrow),
+.offline-day-decision > p:not(.eyebrow),
 .offline-day-result > p:not(.eyebrow),
 .offline-hunter-revenge > p:not(.eyebrow),
 .offline-lovers-reveal > p:not(.eyebrow),
@@ -3544,8 +3546,7 @@ label,
 }
 
 .offline-match-targets > button,
-.offline-option-row > button,
-.offline-recorded-votes > button {
+.offline-option-row > button {
   min-width: 44px;
   min-height: 44px;
   border: 1px solid var(--border);
@@ -3716,87 +3717,82 @@ label,
   font-style: normal;
 }
 
-.offline-day-vote .section-title {
-  margin-bottom: 10px;
+.offline-day-decision {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
 }
 
-.offline-voter-input {
+.offline-day-decision > .offline-match-targets {
+  margin-bottom: 2px;
+}
+
+.offline-day-decision > .button.selected {
+  color: #dcebd5;
+  border-color: #526547;
+  background: #1d281a;
+}
+
+.offline-verdict-options {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.offline-verdict-options > button {
+  min-width: 44px;
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: #15130f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.offline-verdict-options > button.selected {
+  color: #dcebd5;
+  border-color: #526547;
+  background: #1d281a;
+}
+
+.offline-verdict-options > button.danger,
+.offline-verdict-options > button.selected.danger {
+  border-color: #75463f;
+}
+
+.offline-verdict-options > button.selected.danger {
+  color: #ffd0c9;
+  background: #321d1a;
+}
+
+.offline-final-confirmation {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
   padding: 12px;
   border: 1px solid var(--amber-dark);
   border-radius: 10px;
   background: #15130f;
 }
 
-.offline-voter-input > p {
+.offline-final-confirmation > p {
   margin: 0;
   color: var(--muted);
   font-size: var(--type-secondary);
+  line-height: 1.45;
 }
 
-.offline-voter-input > p > strong {
-  color: var(--text);
-}
-
-.offline-mayor-weight {
-  color: var(--amber);
-  font-weight: 700;
-}
-
-.offline-recorded-votes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-  margin: 10px 0;
-}
-
-.offline-recorded-votes > button {
+.offline-confirm-actions {
   display: grid;
   min-width: 0;
-  padding: 7px 9px;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
-  gap: 5px;
-  align-items: center;
-  text-align: left;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 8px;
 }
 
-.offline-recorded-votes span,
-.offline-recorded-votes strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.offline-recorded-votes span,
-.offline-recorded-votes small {
-  color: var(--muted);
-  font-size: var(--type-caption);
-}
-
-.offline-vote-totals {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 10px 0;
-}
-
-.offline-vote-totals > div {
-  display: flex;
-  min-height: 36px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  gap: 7px;
-  align-items: center;
-  background: #15130f;
-}
-
-.offline-vote-totals span {
-  color: var(--muted);
-  font-size: var(--type-caption);
+.offline-confirm-actions > button {
+  min-width: 44px;
+  min-height: 44px;
 }
 
 @media (max-width: 800px) {
@@ -3815,14 +3811,14 @@ label,
     padding-top: 14px;
   }
 
-  .offline-match-targets,
-  .offline-recorded-votes {
+  .offline-match-targets {
     grid-template-columns: 1fr;
   }
 
-  .offline-recorded-votes > button {
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) 30px;
+  .offline-confirm-actions {
+    grid-template-columns: 1fr;
   }
+
 }
 
 /* MS-O3 durable resume and private typed Journal surface. */

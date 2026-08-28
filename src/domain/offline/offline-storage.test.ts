@@ -9,6 +9,7 @@ import {
   loadOfflineSession,
   legacyOfflineSessionStorageKey,
   offlineSessionStorageKey,
+  offlineSessionV3StorageKey,
   offlineSessionV2StorageKey,
   saveOfflineSession,
   type OfflineStorage,
@@ -73,7 +74,7 @@ describe('MS-O1 offline persistence', () => {
     saveOfflineSession(storage, createOfflineSessionState(1))
 
     expect(offlineSessionStorageKey).toBe(
-      'masoi.offline-moderator.session.v3',
+      'masoi.offline-moderator.session.v4',
     )
     expect(offlineSessionStorageKey).not.toBe(onlineKey)
     expect(storage.getItem(onlineKey)).toBe('{"online":"untouched"}')
@@ -105,7 +106,7 @@ describe('MS-O1 offline persistence', () => {
     )
 
     expect(loadOfflineSession(storage)).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       phase: 'SETUP',
       playerNames: current.playerNames,
       roleComposition: current.roleComposition,
@@ -145,7 +146,7 @@ describe('MS-O1 offline persistence', () => {
 
     const migrated = loadOfflineSession(storage)
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       phase: 'NIGHT_1_DISCOVERY',
       roleAssignments: current.roleAssignments,
     })
@@ -158,16 +159,138 @@ describe('MS-O1 offline persistence', () => {
     }])
   })
 
+  it('migrates v3 Day ballots to a duplicate-free Moderator verdict boundary', () => {
+    const storage = new MemoryStorage()
+    const base = createOfflineSessionState(100)
+    const players = Array.from({ length: 7 }, (_, index) => ({
+      id: `offline-player-${index + 1}`,
+      seat: index + 1,
+      alias: `Người ${index + 1}`,
+      alive: index !== 1,
+    }))
+    const authority = {
+      schemaVersion: 2,
+      roomId: 'OFFLINE-MODERATOR',
+      roomCode: 'OFFLINE',
+      revision: 9,
+      createdAt: 10,
+      lifecycle: 'IN_GAME',
+      phase: 'DAY',
+      dayNumber: 2,
+      players,
+      roleAssignments: players.map((player, index) => ({
+        playerId: player.id,
+        roleId: index === 0 ? 'werewolf' : index === 1 ? 'hunter' : 'villager',
+      })),
+      roleRevealConfirmedPlayerIds: players.map((player) => player.id),
+      config: {
+        seatCount: 7,
+        roleComposition: { werewolf: 1, hunter: 1, villager: 5 },
+        wolfPolicy: 'RANDOM_ON_TIE',
+        nightRoleIds: ['werewolf', 'hunter'],
+        revoteDurationMs: 10_000,
+      },
+      night: null,
+      dayVote: {
+        status: 'CLOSED',
+        votes: { 'offline-player-1': 'offline-player-2' },
+        openedAt: 80,
+        deadlineAt: 90,
+        closedAt: 91,
+        result: {
+          kind: 'UNIQUE',
+          targetIds: ['offline-player-2'],
+          counts: { 'offline-player-2': 2 },
+        },
+        hangingEffect: {
+          id: 'hang-1',
+          sourceType: 'DAY_HANGING',
+          category: 'DAY_LETHAL_EFFECT',
+          targetPlayerId: 'offline-player-2',
+          lethal: true,
+          protectorBlockable: false,
+          finalized: true,
+        },
+        hunterRevenge: {
+          hunterPlayerId: 'offline-player-2',
+          status: 'PENDING',
+        },
+      },
+      journal: [
+        { id: 'open', type: 'DAY_VOTE_OPENED', timestamp: 80, dayNumber: 2, phase: 'DAY' },
+        { id: 'vote', type: 'DAY_VOTE_CHANGED', timestamp: 81, dayNumber: 2, phase: 'DAY' },
+        { id: 'hang', type: 'DAY_HANGING_CREATED', timestamp: 91, dayNumber: 2, phase: 'DAY', targetPlayerId: 'offline-player-2' },
+      ],
+    }
+    storage.setItem(offlineSessionV3StorageKey, JSON.stringify({
+      ...base,
+      schemaVersion: 3,
+      phase: 'MATCH',
+      playerNames: players.map((player) => player.alias),
+      roleAssignments: authority.roleAssignments,
+      authority,
+      authorityInput: {
+        cupidTargetIds: [],
+        witchResurrectionTargetId: null,
+        witchPoisonTargetId: null,
+        dayVoterId: 'offline-player-1',
+      },
+    }))
+
+    const migrated = inspectOfflineSession(storage)
+    expect(migrated.sourceVersion).toBe(3)
+    expect(migrated.state?.schemaVersion).toBe(4)
+    expect(migrated.state?.authority?.dayVote).toBeNull()
+    expect(migrated.state?.authority?.dayVerdict).toMatchObject({
+      outcome: 'EXECUTED',
+      candidatePlayerId: 'offline-player-2',
+      hunterRevenge: { status: 'PENDING' },
+    })
+    expect(migrated.state?.authority?.journal.map((event) => event.type)).toEqual([
+      'DAY_HANGING_CREATED',
+    ])
+    expect(migrated.state?.offlineEvents).toContainEqual(expect.objectContaining({
+      type: 'DAY_CANDIDATE_LOCKED',
+      candidatePlayerId: 'offline-player-2',
+    }))
+
+    const openStorage = new MemoryStorage()
+    const openSnapshot = JSON.parse(storage.getItem(offlineSessionV3StorageKey) ?? '{}')
+    openSnapshot.authority.players[1].alive = true
+    openSnapshot.authority.dayVote = {
+      status: 'OPEN',
+      votes: { 'offline-player-1': 'offline-player-2' },
+      openedAt: 80,
+      deadlineAt: 110,
+    }
+    openSnapshot.authority.journal = [
+      { id: 'open', type: 'DAY_VOTE_OPENED', timestamp: 80, dayNumber: 2, phase: 'DAY' },
+      { id: 'vote', type: 'DAY_VOTE_CHANGED', timestamp: 81, dayNumber: 2, phase: 'DAY' },
+    ]
+    openStorage.setItem(offlineSessionV3StorageKey, JSON.stringify(openSnapshot))
+    const openMigrated = loadOfflineSession(openStorage)
+    expect(openMigrated?.authority?.dayVote).toBeNull()
+    expect(openMigrated?.authority?.dayVerdict).toBeNull()
+    expect(openMigrated?.authority?.players[1].alive).toBe(true)
+    expect(openMigrated?.authority?.journal).toEqual([])
+    expect(openMigrated?.authorityInput.dayDecision).toEqual({
+      stage: 'CANDIDATE_DRAFT',
+      selection: { kind: 'UNSET' },
+    })
+  })
+
   it('clears Offline versions only and leaves Online storage untouched', () => {
     const storage = new MemoryStorage()
     const onlineKey = 'masoi.ms0b.rooms.v1'
     storage.setItem(onlineKey, '{"online":"untouched"}')
     storage.setItem(offlineSessionStorageKey, '{}')
+    storage.setItem(offlineSessionV3StorageKey, '{}')
     storage.setItem(offlineSessionV2StorageKey, '{}')
     storage.setItem(legacyOfflineSessionStorageKey, '{}')
 
     expect(clearOfflineSession(storage)).toBe(true)
     expect(storage.getItem(offlineSessionStorageKey)).toBeNull()
+    expect(storage.getItem(offlineSessionV3StorageKey)).toBeNull()
     expect(storage.getItem(offlineSessionV2StorageKey)).toBeNull()
     expect(storage.getItem(legacyOfflineSessionStorageKey)).toBeNull()
     expect(storage.getItem(onlineKey)).toBe('{"online":"untouched"}')

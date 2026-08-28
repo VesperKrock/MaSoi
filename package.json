@@ -15,6 +15,7 @@
     "qa:offline-o2": "node scripts/offline-o2-qa.mjs",
     "qa:offline-o3": "node scripts/offline-o3-qa.mjs",
     "qa:offline-o4": "node scripts/offline-o4-qa.mjs",
+    "qa:offline-hf3": "node scripts/offline-hf3-qa.mjs",
     "qa:local-safety": "node scripts/local-safety-qa.mjs",
     "qa:touch": "node scripts/touch-target-qa.mjs",
     "qa:lan-http": "node scripts/lan-http-request-id-qa.mjs",

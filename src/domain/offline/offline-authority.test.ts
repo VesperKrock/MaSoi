@@ -65,16 +65,24 @@ function callNext(testRunner: ReturnType<typeof runner>) {
   return testRunner.state.authority?.night?.activeRoleId
 }
 
-function recordAllAbstentions(testRunner: ReturnType<typeof runner>) {
-  const room = testRunner.state.authority
-  if (!room) throw new Error('Expected authority room')
-  for (const player of room.players.filter((entry) => entry.alive)) {
-    testRunner.dispatch({
-      type: 'CAST_OFFLINE_DAY_VOTE',
-      voterId: player.id,
-      targetId: null,
-    })
-  }
+function resolveNoCandidate(testRunner: ReturnType<typeof runner>) {
+  testRunner.dispatch({ type: 'SET_OFFLINE_DAY_NO_CANDIDATE_DRAFT' })
+  testRunner.dispatch({ type: 'CONFIRM_OFFLINE_NO_CANDIDATE' })
+}
+
+function resolveCandidate(
+  testRunner: ReturnType<typeof runner>,
+  candidatePlayerId: string,
+  verdict: 'SPARE' | 'EXECUTE',
+) {
+  testRunner.dispatch({
+    type: 'SET_OFFLINE_DAY_CANDIDATE_DRAFT',
+    playerId: candidatePlayerId,
+  })
+  testRunner.dispatch({ type: 'LOCK_OFFLINE_DAY_CANDIDATE' })
+  testRunner.dispatch({ type: 'SET_OFFLINE_DAY_VERDICT_DRAFT', verdict })
+  testRunner.dispatch({ type: 'LOCK_OFFLINE_DAY_VERDICT' })
+  testRunner.dispatch({ type: 'CONFIRM_OFFLINE_DAY_VERDICT' })
 }
 
 function expectStorageRoundTrip(state: OfflineSessionState) {
@@ -93,7 +101,7 @@ function expectStorageRoundTrip(state: OfflineSessionState) {
 }
 
 describe('MS-O2 Offline shared-engine authority adapter', () => {
-  it('runs a mandatory one-target Wolf night, all-abstain Day and Night 2 without rediscovery', () => {
+  it('runs a mandatory one-target Wolf night, no-candidate Day and Night 2 without rediscovery', () => {
     const game = runner(
       readySession([
         'werewolf',
@@ -140,13 +148,8 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     ).toBe(false)
 
     game.dispatch({ type: 'START_OFFLINE_DAY' })
-    game.dispatch({ type: 'OPEN_OFFLINE_DAY_VOTE' })
-    recordAllAbstentions(game)
-    const deadline = game.state.authority?.dayVote?.deadlineAt
-    if (!deadline) throw new Error('Expected Day deadline')
-    game.setNow(deadline)
-    game.dispatch({ type: 'CLOSE_OFFLINE_DAY_VOTE' })
-    expect(game.state.authority?.dayVote?.result?.kind).toBe('NO_VOTES')
+    resolveNoCandidate(game)
+    expect(game.state.authority?.dayVerdict?.outcome).toBe('NO_CANDIDATE')
     game.dispatch({ type: 'START_OFFLINE_NEXT_NIGHT' })
 
     expect(game.state.phase).toBe('MATCH')
@@ -285,7 +288,7 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     expect(game.state.authority?.witchCheckpoint?.finalDeaths).toHaveLength(3)
   })
 
-  it('applies Mayor ×2, forbids self-vote and finishes immediately when Fool is hanged', () => {
+  it('keeps verdict drafts non-authoritative and finishes immediately when Fool is executed', () => {
     const game = runner(
       readySession([
         'werewolf',
@@ -311,34 +314,22 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     game.dispatch({ type: 'COMPLETE_ACTIVE_OFFLINE_RITUAL' })
     game.dispatch({ type: 'FINALIZE_OFFLINE_NIGHT' })
     game.dispatch({ type: 'START_OFFLINE_DAY' })
-    game.dispatch({ type: 'OPEN_OFFLINE_DAY_VOTE' })
-
-    const revision = game.state.authority?.revision
     game.dispatch({
-      type: 'CAST_OFFLINE_DAY_VOTE',
-      voterId: 'offline-player-2',
-      targetId: 'offline-player-2',
+      type: 'SET_OFFLINE_DAY_CANDIDATE_DRAFT',
+      playerId: 'offline-player-2',
     })
-    expect(game.state.blockingError).toContain('không hợp lệ')
+    game.dispatch({
+      type: 'SET_OFFLINE_DAY_CANDIDATE_DRAFT',
+      playerId: 'offline-player-3',
+    })
+    const revision = game.state.authority?.revision
+    expect(game.state.authority?.players.find((player) => player.id === 'offline-player-3')?.alive).toBe(true)
     expect(game.state.authority?.revision).toBe(revision)
-    game.dispatch({ type: 'CLEAR_ERROR' })
-
-    const votes: Array<[string, string | null]> = [
-      ['offline-player-1', 'offline-player-3'],
-      ['offline-player-2', 'offline-player-3'],
-      ['offline-player-3', null],
-      ['offline-player-4', null],
-      ['offline-player-5', null],
-      ['offline-player-6', null],
-      ['offline-player-7', null],
-    ]
-    for (const [voterId, targetId] of votes) {
-      game.dispatch({ type: 'CAST_OFFLINE_DAY_VOTE', voterId, targetId })
-    }
-    const deadline = game.state.authority?.dayVote?.deadlineAt
-    if (!deadline) throw new Error('Expected Day deadline')
-    game.setNow(deadline)
-    game.dispatch({ type: 'CLOSE_OFFLINE_DAY_VOTE' })
+    game.dispatch({ type: 'LOCK_OFFLINE_DAY_CANDIDATE' })
+    game.dispatch({ type: 'SET_OFFLINE_DAY_VERDICT_DRAFT', verdict: 'EXECUTE' })
+    game.dispatch({ type: 'LOCK_OFFLINE_DAY_VERDICT' })
+    expect(game.state.authority?.players.find((player) => player.id === 'offline-player-3')?.alive).toBe(true)
+    game.dispatch({ type: 'CONFIRM_OFFLINE_DAY_VERDICT' })
 
     expect(game.state.phase).toBe('FINISHED')
     expect(game.state.authority?.lifecycle).toBe('FINISHED')
@@ -346,7 +337,8 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
       outcome: 'FOOL',
       subjectPlayerIds: ['offline-player-3'],
     })
-    expect(game.state.authority?.dayVote?.result?.counts['offline-player-3']).toBe(3)
+    expect(game.state.authority?.dayVerdict?.outcome).toBe('EXECUTED')
+    expect(game.state.authority?.dayVote).toBeNull()
   })
 
   it('transforms Half-Wolf and reconciles Traitor before the first Night-2 role call', () => {
@@ -380,12 +372,7 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     ).toBe('PENDING_TRANSFORMATION')
 
     game.dispatch({ type: 'START_OFFLINE_DAY' })
-    game.dispatch({ type: 'OPEN_OFFLINE_DAY_VOTE' })
-    recordAllAbstentions(game)
-    const deadline = game.state.authority?.dayVote?.deadlineAt
-    if (!deadline) throw new Error('Expected Day deadline')
-    game.setNow(deadline)
-    game.dispatch({ type: 'CLOSE_OFFLINE_DAY_VOTE' })
+    resolveNoCandidate(game)
     game.dispatch({ type: 'START_OFFLINE_NEXT_NIGHT' })
 
     const room = game.state.authority
@@ -435,29 +422,15 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     game.dispatch({ type: 'SUBMIT_OFFLINE_NIGHT_TARGET', targetId: null })
     game.dispatch({ type: 'FINALIZE_OFFLINE_NIGHT' })
     game.dispatch({ type: 'START_OFFLINE_DAY' })
-    game.dispatch({ type: 'OPEN_OFFLINE_DAY_VOTE' })
-
-    const room = game.state.authority
-    if (!room) throw new Error('Expected authority room')
-    for (const player of room.players) {
-      game.dispatch({
-        type: 'CAST_OFFLINE_DAY_VOTE',
-        voterId: player.id,
-        targetId: player.id === 'offline-player-2' ? null : 'offline-player-2',
-      })
-    }
-    const deadline = game.state.authority?.dayVote?.deadlineAt
-    if (!deadline) throw new Error('Expected Day deadline')
-    game.setNow(deadline)
-    game.dispatch({ type: 'CLOSE_OFFLINE_DAY_VOTE' })
-    expect(game.state.authority?.dayVote?.hunterRevenge?.status).toBe('PENDING')
+    resolveCandidate(game, 'offline-player-2', 'EXECUTE')
+    expect(game.state.authority?.dayVerdict?.hunterRevenge?.status).toBe('PENDING')
     expectStorageRoundTrip(game.state)
 
     game.dispatch({
       type: 'SUBMIT_OFFLINE_HUNTER_REVENGE',
       targetId: 'offline-player-4',
     })
-    expect(game.state.authority?.dayVote?.hunterRevenge).toMatchObject({
+    expect(game.state.authority?.dayVerdict?.hunterRevenge).toMatchObject({
       status: 'RESOLVED',
       targetPlayerId: 'offline-player-4',
     })

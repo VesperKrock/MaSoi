@@ -80,7 +80,8 @@ for (const duplicateResolver of [
   )
 }
 invariant(!/Math\.random|\bshuffle\b/i.test(sessionSource), 'Offline setup tự xáo/gán bài.')
-invariant(storageSource.includes('session.v3'), 'Offline persistence không ở schema v3.')
+invariant(storageSource.includes('session.v4'), 'Offline persistence không ở schema v4.')
+invariant(storageSource.includes('session.v3'), 'Offline mất migration v3.')
 invariant(storageSource.includes('session.v2'), 'Offline mất migration v2.')
 invariant(storageSource.includes('session.v1'), 'Offline mất migration v1.')
 invariant(
@@ -112,6 +113,6 @@ run(vitestBinary, [
 console.log('PASS Golden A — Village/Wolf + Protector/Seer/Witch + Day/Next Night')
 console.log('PASS Golden B — Cupid/Lovers death fixpoint + Half-Wolf/Traitor Night 2')
 console.log('PASS Golden C — Serial Killer/Fool/Mayor/Hunter + FINISHED outcome')
-console.log('PASS schema v1/v2→v3 + discovery/Journal durability contracts')
+console.log('PASS schema v1/v2/v3→v4 + discovery/Journal durability contracts')
 console.log('PASS Offline authority isolation + shared RoomCommand/RoomState engine reuse')
 console.log('PASS no Supabase/Auth/Realtime/LocalRoomTransport/card art/Play Again + migrations 13/13')

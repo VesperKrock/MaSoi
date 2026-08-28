@@ -22,6 +22,25 @@ function fact(
 }
 
 describe('MS-1H2 Moderator Journal read model', () => {
+  it('formats only meaningful Offline Day verdict outcomes', () => {
+    const sections = buildModeratorJournalSections({ facts: [
+      fact('day-lock', 'DAY_CANDIDATE_LOCKED', {
+        phase: 'DAY', targetName: 'Lan', occurredAt: 1,
+      }),
+      fact('day-spare', 'DAY_CANDIDATE_SPARED', {
+        phase: 'DAY', targetName: 'Lan', occurredAt: 2,
+      }),
+      fact('day-none', 'DAY_NO_CANDIDATE', {
+        phase: 'DAY', occurredAt: 3,
+      }),
+    ] })
+    expect(sections.flatMap((section) => section.lines.map((line) => line.text))).toEqual([
+      'Lan được đưa lên trăng trối.',
+      'Lan được tha.',
+      'Không ai được đưa lên trăng trối.',
+    ])
+  })
+
   it('groups stable chronological Night, Day, and persisted result sections', () => {
     const sections = buildModeratorJournalSections({ facts: [
       fact('3', 'MATCH_FINISHED', { phase: 'RESULT', resolution: 'VILLAGE', occurredAt: 30 }),

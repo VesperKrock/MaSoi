@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { playerLabel } from '../../components/player-label'
-import { getEligibleDayTargets } from '../../domain/actions/target-rules'
 import { projectEndMatch } from '../../domain/gameplay/end-match'
 import {
   isHalfWolfTransformed,
   isTraitorConverted,
 } from '../../domain/gameplay/faction-transitions'
-import { getDayVoteWeight, resolveDayVote } from '../../domain/voting/day-vote'
 import type { NightAction, PlayerId, RoomState } from '../../domain/game/types'
 import type {
   OfflineSessionCommand,
@@ -26,16 +24,6 @@ function nameFor(room: RoomState, playerId: PlayerId | null | undefined) {
   if (!playerId) return 'Không ai'
   const player = room.players.find((entry) => entry.id === playerId)
   return player ? playerLabel(player) : 'Không rõ'
-}
-
-function useCurrentTime(active: boolean) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const timer = window.setInterval(() => setNow(Date.now()), 250)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return now
 }
 
 function runtimeLabel(room: RoomState, playerId: PlayerId) {
@@ -464,136 +452,133 @@ function NightLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: R
   )
 }
 
-function DayVoteOpen({ state, room, dispatch }: OfflineMatchProps & { room: RoomState }) {
-  const vote = room.dayVote
-  const now = useCurrentTime(vote?.status === 'OPEN')
-  if (!vote || vote.status !== 'OPEN') return null
-  const livingPlayers = room.players.filter((player) => player.alive)
-  const unrecorded = livingPlayers.filter(
-    (player) => !Object.prototype.hasOwnProperty.call(vote.votes, player.id),
-  )
-  const activeVoterId =
-    state.authorityInput.dayVoterId &&
-    livingPlayers.some((player) => player.id === state.authorityInput.dayVoterId)
-      ? state.authorityInput.dayVoterId
-      : unrecorded[0]?.id
-  const activeVoter = livingPlayers.find((player) => player.id === activeVoterId)
-  const secondsLeft = Math.max(0, Math.ceil((vote.deadlineAt - now) / 1000))
-  const allRecorded = unrecorded.length === 0
-  const totals = resolveDayVote(
-    vote.votes,
-    livingPlayers.map((player) => player.id),
-    livingPlayers.map((player) => player.id),
-    Object.fromEntries(
-      livingPlayers.map((player) => [
-        player.id,
-        getDayVoteWeight(
-          room.roleAssignments.find(
-            (assignment) => assignment.playerId === player.id,
-          )?.roleId,
-        ),
-      ]),
-    ),
-  ).counts
+function DayDecision({ state, room, dispatch }: OfflineMatchProps & { room: RoomState }) {
+  const decision = state.authorityInput.dayDecision
+  const livingIds = room.players
+    .filter((player) => player.alive)
+    .map((player) => player.id)
 
-  return (
-    <section className="panel offline-day-vote">
-      <div className="section-title">
-        <div>
-          <p className="eyebrow">Phiếu đã ghi {livingPlayers.length - unrecorded.length}/{livingPlayers.length}</p>
-          <h2>Bỏ phiếu · 00:{String(secondsLeft).padStart(2, '0')}</h2>
-        </div>
-      </div>
-      {activeVoter && (
-        <div className="offline-voter-input">
-          <p>
-            Phiếu của <strong>{playerLabel(activeVoter)}</strong>
-            {getDayVoteWeight(
-              room.roleAssignments.find(
-                (assignment) => assignment.playerId === activeVoter.id,
-              )?.roleId,
-            ) === 2 && <span className="offline-mayor-weight"> ×2</span>}
-          </p>
-          <TargetButtons
-            room={room}
-            targetIds={getEligibleDayTargets(room, activeVoter.id)}
-            selectedIds={
-              typeof vote.votes[activeVoter.id] === 'string'
-                ? [vote.votes[activeVoter.id] as PlayerId]
-                : []
-            }
-            onSelect={(targetId) =>
-              dispatch({
-                type: 'CAST_OFFLINE_DAY_VOTE',
-                voterId: activeVoter.id,
-                targetId,
-              })
-            }
-          />
+  if (decision.stage === 'CANDIDATE_DRAFT') {
+    const candidateId = decision.selection.kind === 'PLAYER'
+      ? decision.selection.playerId
+      : null
+    const noCandidate = decision.selection.kind === 'NO_CANDIDATE'
+    return (
+      <section className="panel offline-day-decision">
+        <p className="eyebrow">Bản nháp · có thể đổi</p>
+        <h2>Ai được đưa lên trăng trối?</h2>
+        <p>Quản trò nhập kết quả đã thống nhất ngoài đời. Ứng dụng không ghi phiếu.</p>
+        <TargetButtons
+          room={room}
+          targetIds={livingIds}
+          selectedIds={candidateId ? [candidateId] : []}
+          onSelect={(playerId) =>
+            dispatch({ type: 'SET_OFFLINE_DAY_CANDIDATE_DRAFT', playerId })
+          }
+        />
+        <button
+          className={`button secondary full${noCandidate ? ' selected' : ''}`}
+          aria-pressed={noCandidate}
+          onClick={() => dispatch({ type: 'SET_OFFLINE_DAY_NO_CANDIDATE_DRAFT' })}
+        >
+          KHÔNG CÓ AI
+        </button>
+        {candidateId && (
           <button
-            className="button secondary full"
-            onClick={() =>
-              dispatch({
-                type: 'CAST_OFFLINE_DAY_VOTE',
-                voterId: activeVoter.id,
-                targetId: null,
-              })
-            }
+            className="button primary full"
+            onClick={() => dispatch({ type: 'LOCK_OFFLINE_DAY_CANDIDATE' })}
           >
-            Bỏ phiếu trắng
+            🔒 KHÓA NGƯỜI TRĂNG TRỐI
+          </button>
+        )}
+        {noCandidate && (
+          <div className="offline-final-confirmation">
+            <strong>Xác nhận không có ai?</strong>
+            <p>Ngày sẽ kết thúc ngay, không qua trăng trối hay treo cổ.</p>
+            <button
+              className="button primary full"
+              onClick={() => dispatch({ type: 'CONFIRM_OFFLINE_NO_CANDIDATE' })}
+            >
+              XÁC NHẬN KHÔNG CÓ AI
+            </button>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  if (decision.stage === 'LAST_WORDS') {
+    return (
+      <section className="panel offline-day-decision offline-last-words">
+        <p className="eyebrow">Đã khóa · thảo luận ngoài đời</p>
+        <h2>{nameFor(room, decision.candidatePlayerId)} ĐANG TRĂNG TRỐI</h2>
+        <p>Người này vẫn còn sống. Sau biểu quyết ngoài đời, Quản trò chọn phán quyết.</p>
+        <div className="offline-verdict-options">
+          <button
+            className={decision.verdictDraft === 'SPARE' ? 'selected' : ''}
+            aria-pressed={decision.verdictDraft === 'SPARE'}
+            onClick={() => dispatch({ type: 'SET_OFFLINE_DAY_VERDICT_DRAFT', verdict: 'SPARE' })}
+          >
+            THA
+          </button>
+          <button
+            className={decision.verdictDraft === 'EXECUTE' ? 'selected danger' : 'danger'}
+            aria-pressed={decision.verdictDraft === 'EXECUTE'}
+            onClick={() => dispatch({ type: 'SET_OFFLINE_DAY_VERDICT_DRAFT', verdict: 'EXECUTE' })}
+          >
+            XỬ
           </button>
         </div>
-      )}
-      <div className="offline-recorded-votes">
-        {livingPlayers
-          .filter((player) =>
-            Object.prototype.hasOwnProperty.call(vote.votes, player.id),
-          )
-          .map((player) => (
-            <button
-              key={player.id}
-              onClick={() =>
-                dispatch({ type: 'SET_OFFLINE_DAY_VOTER', playerId: player.id })
-              }
-            >
-              <span>{player.alias}</span>
-              <strong>{nameFor(room, vote.votes[player.id])}</strong>
-              <small>Sửa</small>
-            </button>
-          ))}
+        <button
+          className="button primary full"
+          disabled={!decision.verdictDraft}
+          onClick={() => dispatch({ type: 'LOCK_OFFLINE_DAY_VERDICT' })}
+        >
+          TIẾP TỤC XÁC NHẬN {decision.verdictDraft === 'SPARE' ? 'THA' : decision.verdictDraft === 'EXECUTE' ? 'XỬ' : ''}
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section className="panel offline-day-decision offline-final-confirmation">
+      <p className="eyebrow">Xác nhận cuối · không thể hoàn tác</p>
+      <h2>
+        {decision.verdict === 'SPARE'
+          ? `THA ${nameFor(room, decision.candidatePlayerId)}`
+          : `XỬ ${nameFor(room, decision.candidatePlayerId)}`}
+      </h2>
+      <p>
+        {decision.verdict === 'SPARE'
+          ? 'Người này sống và Ngày kết thúc bình thường.'
+          : 'Hệ thống sẽ áp dụng treo cổ và toàn bộ hậu quả shared rules.'}
+      </p>
+      <div className="offline-confirm-actions">
+        <button
+          className="button secondary"
+          onClick={() => dispatch({ type: 'RETURN_OFFLINE_DAY_VERDICT_DRAFT' })}
+        >
+          Quay lại
+        </button>
+        <button
+          className={`button full ${decision.verdict === 'EXECUTE' ? 'danger' : 'primary'}`}
+          onClick={() => dispatch({ type: 'CONFIRM_OFFLINE_DAY_VERDICT' })}
+        >
+          XÁC NHẬN {decision.verdict === 'SPARE' ? 'THA' : 'XỬ'}
+        </button>
       </div>
-      <div className="offline-vote-totals">
-        {livingPlayers.map((player) => (
-          <div key={player.id}>
-            <span>{player.alias}</span>
-            <strong>{totals[player.id] ?? 0}</strong>
-          </div>
-        ))}
-      </div>
-      <button
-        className="button primary full"
-        disabled={!allRecorded || secondsLeft > 0}
-        onClick={() => dispatch({ type: 'CLOSE_OFFLINE_DAY_VOTE' })}
-      >
-        {!allRecorded
-          ? 'Chưa ghi đủ phiếu'
-          : secondsLeft > 0
-            ? 'Chưa hết thời gian'
-            : 'Chốt kết quả bỏ phiếu'}
-      </button>
     </section>
   )
 }
 
 function DayLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: RoomState }) {
-  const vote = room.dayVote
+  const verdict = room.dayVerdict
   const finalDeaths = room.witchCheckpoint?.finalDeaths ?? []
-  const pendingRevenge = vote?.hunterRevenge?.status === 'PENDING'
-  const hangedId = vote?.result?.kind === 'UNIQUE' ? vote.result.targetIds[0] : null
+  const pendingRevenge = verdict?.hunterRevenge?.status === 'PENDING'
 
   return (
     <>
-      {!vote && (
+      {!verdict && (
         <section className="panel offline-day-discussion">
           <p className="eyebrow">Chỉ công bố tử vong cuối</p>
           <h2>Buổi sáng · Ngày {room.dayNumber}</h2>
@@ -606,25 +591,17 @@ function DayLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: Roo
               ))}
             </div>
           )}
-          <p>Thảo luận ngoài đời. Quản trò chủ động mở lượt bỏ phiếu.</p>
-          <button
-            className="button primary full"
-            onClick={() => dispatch({ type: 'OPEN_OFFLINE_DAY_VOTE' })}
-          >
-            Bắt đầu bỏ phiếu
-          </button>
+          <p>Thảo luận và biểu quyết diễn ra ngoài đời. Quản trò chỉ ghi quyết định cuối.</p>
         </section>
       )}
 
-      {vote?.status === 'OPEN' && (
-        <DayVoteOpen state={state} room={room} dispatch={dispatch} />
-      )}
+      {!verdict && <DayDecision state={state} room={room} dispatch={dispatch} />}
 
-      {vote?.status === 'CLOSED' && pendingRevenge && (
+      {verdict && pendingRevenge && (
         <section className="panel offline-hunter-revenge">
           <p className="eyebrow">Hunter Day revenge</p>
           <h2>THỢ SĂN CHỌN NGƯỜI ĐI CÙNG</h2>
-          <p>{nameFor(room, vote.hunterRevenge?.hunterPlayerId)} vừa bị treo cổ.</p>
+          <p>{nameFor(room, verdict.hunterRevenge?.hunterPlayerId)} vừa bị treo cổ.</p>
           <TargetButtons
             room={room}
             targetIds={room.players
@@ -645,21 +622,21 @@ function DayLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: Roo
         </section>
       )}
 
-      {vote?.status === 'CLOSED' && !pendingRevenge && (
+      {verdict && !pendingRevenge && (
         <section className="panel offline-day-result">
           <p className="eyebrow">Kết quả có thẩm quyền</p>
           <h2>
-            {vote.result?.kind === 'UNIQUE'
-              ? `Đã treo cổ ${nameFor(room, hangedId)}`
-              : vote.result?.kind === 'TIE'
-                ? 'Hòa cao nhất · không ai bị treo cổ'
-                : 'Tất cả bỏ phiếu trắng · không ai bị treo cổ'}
+            {verdict.outcome === 'EXECUTED'
+              ? `Đã treo cổ ${nameFor(room, verdict.candidatePlayerId)}`
+              : verdict.outcome === 'SPARED'
+                ? `${nameFor(room, verdict.candidatePlayerId)} được tha`
+                : 'Không ai được đưa lên trăng trối'}
           </h2>
-          {vote.hunterRevenge?.status === 'RESOLVED' && (
+          {verdict.hunterRevenge?.status === 'RESOLVED' && (
             <p>
               Thợ Săn:{' '}
-              {vote.hunterRevenge.targetPlayerId
-                ? `đã bắn ${nameFor(room, vote.hunterRevenge.targetPlayerId)}`
+              {verdict.hunterRevenge.targetPlayerId
+                ? `đã bắn ${nameFor(room, verdict.hunterRevenge.targetPlayerId)}`
                 : 'không bắn ai'}
             </p>
           )}

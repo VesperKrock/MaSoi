@@ -15,7 +15,7 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineV3Key = 'masoi.offline-moderator.session.v3'
+const offlineV4Key = 'masoi.offline-moderator.session.v4'
 const offlineV2Key = 'masoi.offline-moderator.session.v2'
 const onlineKey = 'masoi.ms0b.rooms.v1'
 const mobileViewports = [
@@ -44,7 +44,7 @@ function callPlanFor(roleIds) {
   ].filter((roleId) => configured.has(roleId))
 }
 
-function readyState(roleIds, version = 3) {
+function readyState(roleIds, version = 4) {
   const callPlan = callPlanFor(roleIds)
   const state = {
     schemaVersion: version,
@@ -68,12 +68,19 @@ function readyState(roleIds, version = 3) {
       cupidTargetIds: [],
       witchResurrectionTargetId: null,
       witchPoisonTargetId: null,
-      dayVoterId: null,
+      ...(version >= 4
+        ? {
+            dayDecision: {
+              stage: 'CANDIDATE_DRAFT',
+              selection: { kind: 'UNSET' },
+            },
+          }
+        : { dayVoterId: null }),
     },
     blockingError: null,
     updatedAt: 100,
   }
-  if (version === 3) {
+  if (version >= 3) {
     state.offlineEvents = callPlan.map((roleId, index) => ({
       id: `offline-role-discovery-${roleId}-${index + 1}`,
       type: 'ROLE_IDENTITY_DISCOVERED',
@@ -187,12 +194,12 @@ try {
   await inspectViewports(page, 'landing-active-resume')
   await clickByText(page, '.offline-entry-action', 'TIẾP TỤC')
   await page.waitForSelector('.offline-final-roster')
-  await page.waitForFunction((key) => localStorage.getItem(key), {}, offlineV3Key)
+  await page.waitForFunction((key) => localStorage.getItem(key), {}, offlineV4Key)
   const migrated = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)),
-    offlineV3Key,
+    offlineV4Key,
   )
-  invariant(migrated.schemaVersion === 3, 'Không migrate v2 → v3.')
+  invariant(migrated.schemaVersion === 4, 'Không migrate v2 → v4.')
   invariant(migrated.offlineEvents.length === 4, 'Migration mất role-discovery truth.')
   invariant(
     migrated.offlineEvents.find((event) => event.roleId === 'werewolf')
@@ -240,12 +247,12 @@ try {
   invariant(!firstJournalText.includes('ĐI NGỦ'), 'Journal ghi ritual wake/sleep.')
   await inspectViewports(page, 'offline-journal')
   const journalLineCount = await page.$$('.moderator-journal-section li')
-  const beforeReload = await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)
+  const beforeReload = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-morning-checkpoint')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)) === beforeReload,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === beforeReload,
     'Reload làm đổi hoặc replay authoritative snapshot.',
   )
   await page.click('.offline-session-tools .button')
@@ -256,24 +263,15 @@ try {
   await page.click('.moderator-journal-heading .button')
 
   await page.click('.offline-morning-checkpoint .button.primary')
-  await page.click('.offline-day-discussion .button.primary')
-  for (let index = 0; index < 7; index += 1) {
-    await page.click('.offline-voter-input > .button.secondary')
-  }
-  await page.evaluate((key) => {
-    const state = JSON.parse(localStorage.getItem(key))
-    state.authority.dayVote.deadlineAt = Date.now() - 1
-    localStorage.setItem(key, JSON.stringify(state))
-  }, offlineV3Key)
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.click('.offline-day-vote > .button.primary')
+  await clickByText(page, '.offline-day-decision > .button.secondary', 'KHÔNG CÓ AI')
+  await clickByText(page, '.offline-final-confirmation .button.primary', 'XÁC NHẬN KHÔNG CÓ AI')
   await page.click('.offline-session-tools .button')
   const dayJournal = await page.$eval('.moderator-journal-view', (node) => node.textContent)
-  invariant(dayJournal.includes('tất cả bỏ phiếu trắng'), 'Journal thiếu aggregate Day result.')
+  invariant(dayJournal.includes('Không ai được đưa lên trăng trối'), 'Journal thiếu no-candidate Day result.')
   invariant(!dayJournal.includes('Phiếu của'), 'Journal lộ phiếu từng người.')
   await page.click('.moderator-journal-heading .button')
 
-  const activeSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)
+  const activeSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
   await page.click('.topbar nav > a')
   await page.waitForSelector('.entry-actions')
   invariant(
@@ -283,14 +281,14 @@ try {
   await clickByText(page, '.offline-entry-action', 'TIẾP TỤC')
   await page.waitForSelector('.offline-day-result')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)) === activeSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === activeSnapshot,
     'Resume active làm thay đổi snapshot.',
   )
 
   const villagerState = readyState(Array.from({ length: 7 }, () => 'villager'))
   await page.evaluate(
     ({ key, state }) => localStorage.setItem(key, JSON.stringify(state)),
-    { key: offlineV3Key, state: villagerState },
+    { key: offlineV4Key, state: villagerState },
   )
   await page.goto(`${origin}/?screen=offline`, { waitUntil: 'domcontentloaded' })
   await page.click('.offline-final-roster .offline-primary-action')
@@ -300,7 +298,7 @@ try {
     'FINISHED hiển thị Play Again.',
   )
   await inspectViewports(page, 'offline-finished')
-  const finishedSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)
+  const finishedSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
   await clickByText(page, '.moderator-end-actions a', 'Về trang chủ')
   await page.waitForSelector('.offline-entry-state')
   const finishedLanding = await page.$eval('.offline-entry-state', (node) => node.textContent)
@@ -312,7 +310,7 @@ try {
   await clickByText(page, '.offline-entry-action', 'XEM VÁN')
   await page.waitForSelector('.moderator-end-match')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)) === finishedSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === finishedSnapshot,
     'Resume FINISHED làm replay outcome.',
   )
 
@@ -321,22 +319,22 @@ try {
   await clickByText(page, '.offline-entry-state a', 'Bắt đầu ván Offline mới')
   await page.waitForSelector('.offline-replacement-layout')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)) === finishedSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === finishedSnapshot,
     'Mở New intent đã âm thầm ghi đè ván cũ.',
   )
   await inspectViewports(page, 'offline-destructive-confirmation')
   await clickByText(page, '.offline-replacement-actions button', 'Xóa và bắt đầu mới')
   await page.waitForSelector('.offline-setup-layout')
-  const replacement = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), offlineV3Key)
+  const replacement = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), offlineV4Key)
   invariant(
-    replacement.schemaVersion === 3 &&
+    replacement.schemaVersion === 4 &&
       replacement.phase === 'SETUP' &&
       replacement.authority === null &&
       replacement.offlineEvents.length === 0,
-    'Destructive confirmation không tạo session v3 sạch.',
+    'Destructive confirmation không tạo session v4 sạch.',
   )
 
-  await page.evaluate((key) => localStorage.setItem(key, '{bad json'), offlineV3Key)
+  await page.evaluate((key) => localStorage.setItem(key, '{bad json'), offlineV4Key)
   await page.goto(`${origin}/?screen=offline`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-replacement-layout')
   invariant(
@@ -344,7 +342,7 @@ try {
     'Corrupt snapshot không fail-safe.',
   )
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV3Key)) === '{bad json',
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === '{bad json',
     'Corrupt snapshot bị tự động ghi đè.',
   )
 
@@ -356,8 +354,8 @@ try {
   invariant(supabaseRequests.length === 0, 'O3 Offline gọi Supabase.')
 
   console.log('PASS typed Offline Journal role truth + meaningful chronology + Witch rescue truth')
-  console.log('PASS anonymous Day aggregate + no ritual/voter-choice disclosure')
-  console.log('PASS v2→v3 migration + exact reload/resume + duplicate-free Journal')
+  console.log('PASS Moderator Day outcome only + no ritual/voter-choice disclosure')
+  console.log('PASS v2→v4 migration + exact reload/resume + duplicate-free Journal')
   console.log('PASS active/finished resume + explicit destructive new-session confirmation')
   console.log('PASS corrupt snapshot fail-safe + Online storage isolation + no Supabase')
   console.log('PASS Moderator mobile 320/360/390/430px + no overflow/artwork + >=44px controls')

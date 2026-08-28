@@ -17,8 +17,29 @@ export interface OfflineAuthorityInput {
   cupidTargetIds: PlayerId[]
   witchResurrectionTargetId: PlayerId | null
   witchPoisonTargetId: PlayerId | null
-  dayVoterId: PlayerId | null
+  dayDecision: OfflineDayDecision
 }
+
+export type OfflineDayVerdict = 'SPARE' | 'EXECUTE'
+
+export type OfflineDayDecision =
+  | {
+      stage: 'CANDIDATE_DRAFT'
+      selection:
+        | { kind: 'UNSET' }
+        | { kind: 'PLAYER'; playerId: PlayerId }
+        | { kind: 'NO_CANDIDATE' }
+    }
+  | {
+      stage: 'LAST_WORDS'
+      candidatePlayerId: PlayerId
+      verdictDraft: OfflineDayVerdict | null
+    }
+  | {
+      stage: 'VERDICT_CONFIRM'
+      candidatePlayerId: PlayerId
+      verdict: OfflineDayVerdict
+    }
 
 export type OfflineAuthorityCommand =
   | { type: 'BEGIN_OFFLINE_MATCH' }
@@ -37,14 +58,17 @@ export type OfflineAuthorityCommand =
   | { type: 'CONFIRM_OFFLINE_WITCH_DECISION' }
   | { type: 'FINALIZE_OFFLINE_NIGHT' }
   | { type: 'START_OFFLINE_DAY' }
-  | { type: 'OPEN_OFFLINE_DAY_VOTE' }
-  | { type: 'SET_OFFLINE_DAY_VOTER'; playerId: PlayerId }
   | {
-      type: 'CAST_OFFLINE_DAY_VOTE'
-      voterId: PlayerId
-      targetId: PlayerId | null
+      type: 'SET_OFFLINE_DAY_CANDIDATE_DRAFT'
+      playerId: PlayerId | null
     }
-  | { type: 'CLOSE_OFFLINE_DAY_VOTE' }
+  | { type: 'SET_OFFLINE_DAY_NO_CANDIDATE_DRAFT' }
+  | { type: 'LOCK_OFFLINE_DAY_CANDIDATE' }
+  | { type: 'CONFIRM_OFFLINE_NO_CANDIDATE' }
+  | { type: 'SET_OFFLINE_DAY_VERDICT_DRAFT'; verdict: OfflineDayVerdict }
+  | { type: 'LOCK_OFFLINE_DAY_VERDICT' }
+  | { type: 'RETURN_OFFLINE_DAY_VERDICT_DRAFT' }
+  | { type: 'CONFIRM_OFFLINE_DAY_VERDICT' }
   | {
       type: 'SUBMIT_OFFLINE_HUNTER_REVENGE'
       targetId: PlayerId | null
@@ -56,7 +80,10 @@ export function createOfflineAuthorityInput(): OfflineAuthorityInput {
     cupidTargetIds: [],
     witchResurrectionTargetId: null,
     witchPoisonTargetId: null,
-    dayVoterId: null,
+    dayDecision: {
+      stage: 'CANDIDATE_DRAFT',
+      selection: { kind: 'UNSET' },
+    },
   }
 }
 
@@ -110,11 +137,11 @@ function createAuthorityRoom(
     witchResources: null,
     witchCheckpoint: null,
     dayVote: null,
+    dayVerdict: null,
     factionTransitions: createInitialFactionTransitionState(assignments),
     cupidLovers: createInitialCupidLoverState(assignments, now),
     matchResult: null,
-    // These engine facts remain internal authority state. Offline Journal is
-    // intentionally not exposed as a product surface in O2.
+    // Typed engine facts are the gameplay source for the private Offline Journal.
     journal: [],
   }
 }
@@ -493,78 +520,226 @@ export function reduceOfflineAuthority(
         state,
         applyRoomCommand(room, { type: 'START_DAY' }, environment),
         now,
-      )
-    }
-
-    if (command.type === 'OPEN_OFFLINE_DAY_VOTE') {
-      return success(
-        state,
-        applyRoomCommand(room, { type: 'OPEN_DAY_VOTE' }, environment),
-        now,
         createOfflineAuthorityInput(),
       )
     }
 
-    if (command.type === 'SET_OFFLINE_DAY_VOTER') {
+    if (command.type === 'SET_OFFLINE_DAY_CANDIDATE_DRAFT') {
       if (
         room.phase !== 'DAY' ||
-        room.dayVote?.status !== 'OPEN' ||
-        !room.players.some(
-          (player) => player.id === command.playerId && player.alive,
-        )
+        room.dayVerdict ||
+        state.authorityInput.dayDecision.stage !== 'CANDIDATE_DRAFT'
       ) {
-        throw new Error('Chỉ chọn người còn sống để ghi phiếu.')
+        throw new Error('Không thể đổi người trăng trối ở bước hiện tại.')
+      }
+      if (
+        command.playerId !== null &&
+        !room.players.some((player) => player.id === command.playerId && player.alive)
+      ) {
+        throw new Error('Chỉ người còn sống mới được đưa lên trăng trối.')
       }
       return {
         ...state,
         authorityInput: {
           ...state.authorityInput,
-          dayVoterId: command.playerId,
+          dayDecision: {
+            stage: 'CANDIDATE_DRAFT',
+            selection: command.playerId
+              ? { kind: 'PLAYER', playerId: command.playerId }
+              : { kind: 'UNSET' },
+          },
         },
         blockingError: null,
         updatedAt: now,
       }
     }
 
-    if (command.type === 'CAST_OFFLINE_DAY_VOTE') {
-      return success(
+    if (command.type === 'SET_OFFLINE_DAY_NO_CANDIDATE_DRAFT') {
+      if (
+        room.phase !== 'DAY' ||
+        room.dayVerdict ||
+        state.authorityInput.dayDecision.stage !== 'CANDIDATE_DRAFT'
+      ) {
+        throw new Error('Không thể đổi người trăng trối ở bước hiện tại.')
+      }
+      return {
+        ...state,
+        authorityInput: {
+          ...state.authorityInput,
+          dayDecision: {
+            stage: 'CANDIDATE_DRAFT',
+            selection: { kind: 'NO_CANDIDATE' },
+          },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'LOCK_OFFLINE_DAY_CANDIDATE') {
+      const decision = state.authorityInput.dayDecision
+      if (
+        room.phase !== 'DAY' ||
+        room.dayVerdict ||
+        decision.stage !== 'CANDIDATE_DRAFT' ||
+        decision.selection.kind !== 'PLAYER'
+      ) {
+        throw new Error('Hãy chọn một người còn sống trước khi khóa trăng trối.')
+      }
+      return {
+        ...state,
+        offlineEvents: [
+          ...state.offlineEvents,
+          {
+            id: `offline-day-candidate-${room.dayNumber}-${now}`,
+            type: 'DAY_CANDIDATE_LOCKED',
+            occurredAt: now,
+            dayNumber: room.dayNumber,
+            candidatePlayerId: decision.selection.playerId,
+          },
+        ],
+        authorityInput: {
+          ...state.authorityInput,
+          dayDecision: {
+            stage: 'LAST_WORDS',
+            candidatePlayerId: decision.selection.playerId,
+            verdictDraft: null,
+          },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'CONFIRM_OFFLINE_NO_CANDIDATE') {
+      const decision = state.authorityInput.dayDecision
+      if (
+        room.phase !== 'DAY' ||
+        room.dayVerdict ||
+        decision.stage !== 'CANDIDATE_DRAFT' ||
+        decision.selection.kind !== 'NO_CANDIDATE'
+      ) {
+        throw new Error('Hãy chọn “Không có ai” trước khi xác nhận.')
+      }
+      const next = success(
         state,
         applyRoomCommand(
           room,
           {
-            type: 'CAST_DAY_VOTE',
-            playerId: command.voterId,
-            targetId: command.targetId,
+            type: 'RESOLVE_MODERATOR_DAY_VERDICT',
+            candidatePlayerId: null,
+            execute: false,
           },
           environment,
         ),
         now,
-        { ...state.authorityInput, dayVoterId: null },
       )
+      return {
+        ...next,
+        offlineEvents: [
+          ...next.offlineEvents,
+          {
+            id: `offline-day-no-candidate-${room.dayNumber}-${now}`,
+            type: 'DAY_NO_CANDIDATE',
+            occurredAt: now,
+            dayNumber: room.dayNumber,
+          },
+        ],
+      }
     }
 
-    if (command.type === 'CLOSE_OFFLINE_DAY_VOTE') {
-      const livingIds = room.players
-        .filter((player) => player.alive)
-        .map((player) => player.id)
-      if (
-        !room.dayVote ||
-        livingIds.some(
-          (playerId) =>
-            !Object.prototype.hasOwnProperty.call(room.dayVote?.votes, playerId),
-        )
-      ) {
-        throw new Error('Phải ghi nhận phiếu hoặc bỏ phiếu trắng cho mọi người còn sống.')
+    if (command.type === 'SET_OFFLINE_DAY_VERDICT_DRAFT') {
+      const decision = state.authorityInput.dayDecision
+      if (room.dayVerdict || decision.stage !== 'LAST_WORDS') {
+        throw new Error('Chưa khóa người trăng trối.')
       }
-      return success(
+      return {
+        ...state,
+        authorityInput: {
+          ...state.authorityInput,
+          dayDecision: { ...decision, verdictDraft: command.verdict },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'LOCK_OFFLINE_DAY_VERDICT') {
+      const decision = state.authorityInput.dayDecision
+      if (room.dayVerdict || decision.stage !== 'LAST_WORDS' || !decision.verdictDraft) {
+        throw new Error('Hãy chọn THA hoặc XỬ trước khi tiếp tục.')
+      }
+      return {
+        ...state,
+        authorityInput: {
+          ...state.authorityInput,
+          dayDecision: {
+            stage: 'VERDICT_CONFIRM',
+            candidatePlayerId: decision.candidatePlayerId,
+            verdict: decision.verdictDraft,
+          },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'RETURN_OFFLINE_DAY_VERDICT_DRAFT') {
+      const decision = state.authorityInput.dayDecision
+      if (room.dayVerdict || decision.stage !== 'VERDICT_CONFIRM') return state
+      return {
+        ...state,
+        authorityInput: {
+          ...state.authorityInput,
+          dayDecision: {
+            stage: 'LAST_WORDS',
+            candidatePlayerId: decision.candidatePlayerId,
+            verdictDraft: decision.verdict,
+          },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'CONFIRM_OFFLINE_DAY_VERDICT') {
+      const decision = state.authorityInput.dayDecision
+      if (room.dayVerdict || decision.stage !== 'VERDICT_CONFIRM') {
+        throw new Error('Phán quyết chưa ở bước xác nhận cuối.')
+      }
+      const next = success(
         state,
-        applyRoomCommand(room, { type: 'CLOSE_DAY_VOTE' }, environment),
+        applyRoomCommand(
+          room,
+          {
+            type: 'RESOLVE_MODERATOR_DAY_VERDICT',
+            candidatePlayerId: decision.candidatePlayerId,
+            execute: decision.verdict === 'EXECUTE',
+          },
+          environment,
+        ),
         now,
       )
+      if (decision.verdict === 'EXECUTE') return next
+      return {
+        ...next,
+        offlineEvents: [
+          ...next.offlineEvents,
+          {
+            id: `offline-day-spared-${room.dayNumber}-${now}`,
+            type: 'DAY_CANDIDATE_SPARED',
+            occurredAt: now,
+            dayNumber: room.dayNumber,
+            candidatePlayerId: decision.candidatePlayerId,
+          },
+        ],
+      }
     }
 
     if (command.type === 'SUBMIT_OFFLINE_HUNTER_REVENGE') {
-      const hunterPlayerId = room.dayVote?.hunterRevenge?.hunterPlayerId
+      const hunterPlayerId =
+        room.dayVote?.hunterRevenge?.hunterPlayerId ??
+        room.dayVerdict?.hunterRevenge?.hunterPlayerId
       if (!hunterPlayerId) throw new Error('Không có lượt trả thù của Thợ Săn.')
       return success(
         state,

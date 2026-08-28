@@ -131,6 +131,16 @@ export interface DayVoteState {
   hunterRevenge?: HunterDayRevenge
 }
 
+export interface ModeratorDayVerdictState {
+  status: 'RESOLVED'
+  outcome: 'NO_CANDIDATE' | 'SPARED' | 'EXECUTED'
+  candidatePlayerId?: PlayerId
+  resolvedAt: number
+  hangingEffect?: DayEffect
+  consequenceEffects?: DayEffect[]
+  hunterRevenge?: HunterDayRevenge
+}
+
 export interface DayEffect {
   id: string
   sourceType:
@@ -257,6 +267,8 @@ export interface RoomState {
   witchResources?: WitchResources | null
   witchCheckpoint?: PersistedWitchCheckpoint | null
   dayVote: DayVoteState | null
+  /** Local Moderator authority only. Online continues to use dayVote. */
+  dayVerdict?: ModeratorDayVerdictState | null
   factionTransitions?: FactionTransitionState
   cupidLovers?: CupidLoverState
   matchResult?: MatchResult | null
@@ -309,6 +321,11 @@ export type RoomCommand =
   | { type: 'OPEN_DAY_VOTE' }
   | { type: 'CAST_DAY_VOTE'; playerId: PlayerId; targetId: PlayerId | null }
   | { type: 'CLOSE_DAY_VOTE' }
+  | {
+      type: 'RESOLVE_MODERATOR_DAY_VERDICT'
+      candidatePlayerId: PlayerId | null
+      execute: boolean
+    }
   | {
       type: 'SUBMIT_HUNTER_REVENGE'
       playerId: PlayerId

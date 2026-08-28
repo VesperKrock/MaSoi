@@ -15,7 +15,7 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineKey = 'masoi.offline-moderator.session.v3'
+const offlineKey = 'masoi.offline-moderator.session.v4'
 const onlineKey = 'masoi.ms0b.rooms.v1'
 const mobileViewports = [
   { width: 320, height: 568 },
@@ -46,7 +46,7 @@ function readyState(roleIds) {
   ]
   const callPlan = order.filter((roleId) => (composition[roleId] ?? 0) > 0)
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     mode: 'OFFLINE_MODERATOR',
     phase: 'NIGHT_1_READY',
     seatCount: roleIds.length,
@@ -76,7 +76,10 @@ function readyState(roleIds) {
       cupidTargetIds: [],
       witchResurrectionTargetId: null,
       witchPoisonTargetId: null,
-      dayVoterId: null,
+      dayDecision: {
+        stage: 'CANDIDATE_DRAFT',
+        selection: { kind: 'UNSET' },
+      },
     },
     blockingError: null,
     updatedAt: 1,
@@ -208,25 +211,11 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.click('.offline-morning-checkpoint .button.primary')
   await page.waitForSelector('.offline-day-discussion')
-  await page.click('.offline-day-discussion .button.primary')
-  await page.waitForSelector('.offline-day-vote')
-  for (let index = 0; index < 6; index += 1) {
-    await page.click('.offline-voter-input > .button.secondary')
-  }
-  await page.waitForFunction(
-    () => document.querySelector('.offline-day-vote .button.primary')?.textContent?.includes('thời gian'),
-  )
-  await page.evaluate((key) => {
-    const state = JSON.parse(localStorage.getItem(key))
-    state.authority.dayVote.deadlineAt = Date.now() - 1
-    localStorage.setItem(key, JSON.stringify(state))
-  }, offlineKey)
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('.offline-day-vote')
-  await page.click('.offline-day-vote > .button.primary')
+  await clickByText(page, '.offline-day-decision > .button.secondary', 'KHÔNG CÓ AI')
+  await clickByText(page, '.offline-final-confirmation .button.primary', 'XÁC NHẬN KHÔNG CÓ AI')
   await page.waitForSelector('.offline-day-result')
   const dayResult = await page.$eval('.offline-day-result h2', (node) => node.textContent)
-  invariant(dayResult.includes('phiếu trắng'), 'All-abstain Day không ra nobody.')
+  invariant(dayResult.includes('Không ai được đưa lên trăng trối'), 'No-candidate Day không ra nobody.')
   await inspectViewports(page, 'day-result')
 
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -278,7 +267,7 @@ try {
 
   console.log('PASS Offline Moderator one-target Wolf + Seer + final Night deaths')
   console.log('PASS exact refresh at Night action, Morning, Day, Next Night and FINISHED')
-  console.log('PASS local all-abstain Day adapter + explicit Next Night + no holder rediscovery')
+  console.log('PASS local no-candidate Day verdict + explicit Next Night + no holder rediscovery')
   console.log('PASS terminal winner/original roster + Journal handoff + no Play Again')
   console.log('PASS mobile 320/360/390/430px + no overflow/artwork/live-pack markers')
   console.log('PASS Offline storage isolation + no Supabase calls')

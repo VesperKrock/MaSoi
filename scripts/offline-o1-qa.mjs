@@ -15,7 +15,7 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineKey = 'masoi.offline-moderator.session.v3'
+const offlineKey = 'masoi.offline-moderator.session.v4'
 const onlineKey = 'masoi.ms0b.rooms.v1'
 const mobileViewports = [
   { width: 320, height: 568 },
@@ -210,7 +210,7 @@ try {
     localStorage.setItem(
       key,
       JSON.stringify({
-        schemaVersion: 3,
+        schemaVersion: 4,
         mode: 'OFFLINE_MODERATOR',
         phase: 'NIGHT_1_DISCOVERY',
         seatCount: 7,
@@ -235,7 +235,10 @@ try {
           cupidTargetIds: [],
           witchResurrectionTargetId: null,
           witchPoisonTargetId: null,
-          dayVoterId: null,
+          dayDecision: {
+            stage: 'CANDIDATE_DRAFT',
+            selection: { kind: 'UNSET' },
+          },
         },
         blockingError: null,
         updatedAt: 1,

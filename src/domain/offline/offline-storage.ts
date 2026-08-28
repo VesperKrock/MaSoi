@@ -9,6 +9,8 @@ import {
 } from './offline-session'
 
 export const offlineSessionStorageKey =
+  'masoi.offline-moderator.session.v4' as const
+export const offlineSessionV3StorageKey =
   'masoi.offline-moderator.session.v3' as const
 export const offlineSessionV2StorageKey =
   'masoi.offline-moderator.session.v2' as const
@@ -17,6 +19,7 @@ export const legacyOfflineSessionStorageKey =
 
 const offlineStorageKeys = [
   offlineSessionStorageKey,
+  offlineSessionV3StorageKey,
   offlineSessionV2StorageKey,
   legacyOfflineSessionStorageKey,
 ] as const
@@ -36,7 +39,7 @@ export type OfflineSessionStorageStatus =
 export interface OfflineSessionInspection {
   status: OfflineSessionStorageStatus
   state: OfflineSessionState | null
-  sourceVersion?: 1 | 2 | 3
+  sourceVersion?: 1 | 2 | 3 | 4
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -156,6 +159,29 @@ function isDayVoteState(value: unknown): boolean {
   )
 }
 
+function isHunterRevenge(value: unknown): boolean {
+  return value === undefined || (
+    isRecord(value) &&
+    typeof value.hunterPlayerId === 'string' &&
+    (value.status === 'PENDING' || value.status === 'RESOLVED')
+  )
+}
+
+function isDayVerdictState(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  return (
+    isRecord(value) &&
+    value.status === 'RESOLVED' &&
+    (value.outcome === 'NO_CANDIDATE' ||
+      value.outcome === 'SPARED' ||
+      value.outcome === 'EXECUTED') &&
+    (value.candidatePlayerId === undefined ||
+      typeof value.candidatePlayerId === 'string') &&
+    typeof value.resolvedAt === 'number' &&
+    isHunterRevenge(value.hunterRevenge)
+  )
+}
+
 function isAuthorityState(value: unknown): boolean {
   if (value === null) return true
   return (
@@ -174,6 +200,7 @@ function isAuthorityState(value: unknown): boolean {
     value.config.nightRoleIds.every(isRoleId) &&
     isNightState(value.night) &&
     isDayVoteState(value.dayVote) &&
+    isDayVerdictState(value.dayVerdict) &&
     (value.lifecycle === 'IN_GAME' || value.lifecycle === 'FINISHED') &&
     (value.phase === 'SETUP' ||
       value.phase === 'NIGHT' ||
@@ -191,8 +218,28 @@ function isAuthorityInput(value: unknown): boolean {
       typeof value.witchResurrectionTargetId === 'string') &&
     (value.witchPoisonTargetId === null ||
       typeof value.witchPoisonTargetId === 'string') &&
-    (value.dayVoterId === null || typeof value.dayVoterId === 'string')
+    isDayDecision(value.dayDecision)
   )
+}
+
+function isDayDecision(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  if (value.stage === 'CANDIDATE_DRAFT') {
+    if (!isRecord(value.selection)) return false
+    return value.selection.kind === 'UNSET' ||
+      value.selection.kind === 'NO_CANDIDATE' ||
+      (value.selection.kind === 'PLAYER' &&
+        typeof value.selection.playerId === 'string')
+  }
+  if (value.stage === 'LAST_WORDS') {
+    return typeof value.candidatePlayerId === 'string' &&
+      (value.verdictDraft === null ||
+        value.verdictDraft === 'SPARE' ||
+        value.verdictDraft === 'EXECUTE')
+  }
+  return value.stage === 'VERDICT_CONFIRM' &&
+    typeof value.candidatePlayerId === 'string' &&
+    (value.verdict === 'SPARE' || value.verdict === 'EXECUTE')
 }
 
 function isNightStep(value: unknown): value is OfflineNightOneStep | null {
@@ -220,17 +267,27 @@ function isNightStep(value: unknown): value is OfflineNightOneStep | null {
 }
 
 function isOfflineEvent(value: unknown): value is OfflineSessionEvent {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.occurredAt !== 'number'
+  ) return false
+  if (value.type === 'ROLE_IDENTITY_DISCOVERED') {
+    return isRoleId(value.roleId) &&
+      value.roleId !== 'villager' &&
+      Array.isArray(value.holderPlayerIds) &&
+      value.holderPlayerIds.length > 0 &&
+      value.holderPlayerIds.every((playerId) => typeof playerId === 'string') &&
+      new Set(value.holderPlayerIds).size === value.holderPlayerIds.length
+  }
+  if (value.type === 'DAY_NO_CANDIDATE') {
+    return typeof value.dayNumber === 'number'
+  }
   return (
-    isRecord(value) &&
-    value.type === 'ROLE_IDENTITY_DISCOVERED' &&
-    typeof value.id === 'string' &&
-    typeof value.occurredAt === 'number' &&
-    isRoleId(value.roleId) &&
-    value.roleId !== 'villager' &&
-    Array.isArray(value.holderPlayerIds) &&
-    value.holderPlayerIds.length > 0 &&
-    value.holderPlayerIds.every((playerId) => typeof playerId === 'string') &&
-    new Set(value.holderPlayerIds).size === value.holderPlayerIds.length
+    (value.type === 'DAY_CANDIDATE_LOCKED' ||
+      value.type === 'DAY_CANDIDATE_SPARED') &&
+    typeof value.dayNumber === 'number' &&
+    typeof value.candidatePlayerId === 'string'
   )
 }
 
@@ -325,14 +382,128 @@ function synthesizedDiscoveryEvents(
   })
 }
 
-function migrateV2OfflineSession(value: unknown): OfflineSessionState | null {
-  if (!isRecord(value) || value.schemaVersion !== 2) return null
+const obsoleteOfflineDayJournalTypes = new Set([
+  'DAY_VOTE_OPENED',
+  'DAY_VOTE_CHANGED',
+  'DAY_VOTE_CLOSED',
+  'HANGING_RESULT',
+])
+
+function migrateAuthorityInput(value: unknown) {
+  const fresh = createOfflineAuthorityInput()
+  if (!isRecord(value)) return fresh
+  return {
+    cupidTargetIds: Array.isArray(value.cupidTargetIds)
+      ? value.cupidTargetIds
+      : fresh.cupidTargetIds,
+    witchResurrectionTargetId:
+      value.witchResurrectionTargetId === null ||
+      typeof value.witchResurrectionTargetId === 'string'
+        ? value.witchResurrectionTargetId
+        : null,
+    witchPoisonTargetId:
+      value.witchPoisonTargetId === null ||
+      typeof value.witchPoisonTargetId === 'string'
+        ? value.witchPoisonTargetId
+        : null,
+    dayDecision: fresh.dayDecision,
+  }
+}
+
+function migrateV3Authority(
+  authority: unknown,
+  updatedAt: number,
+): { authority: unknown; events: OfflineSessionEvent[] } {
+  if (authority === null) return { authority: null, events: [] }
+  if (!isRecord(authority)) return { authority, events: [] }
+  const journal = Array.isArray(authority.journal)
+    ? authority.journal.filter(
+        (event) =>
+          !isRecord(event) ||
+          typeof event.type !== 'string' ||
+          !obsoleteOfflineDayJournalTypes.has(event.type),
+      )
+    : authority.journal
+  const dayVote = authority.dayVote
+  let dayVerdict: Record<string, unknown> | null = null
+  const events: OfflineSessionEvent[] = []
+  if (isRecord(dayVote) && dayVote.status === 'CLOSED') {
+    const resolvedAt = typeof dayVote.closedAt === 'number'
+      ? dayVote.closedAt
+      : updatedAt
+    const result = isRecord(dayVote.result) ? dayVote.result : null
+    const candidatePlayerId =
+      result?.kind === 'UNIQUE' &&
+      Array.isArray(result.targetIds) &&
+      typeof result.targetIds[0] === 'string'
+        ? result.targetIds[0]
+        : null
+    if (candidatePlayerId) {
+      dayVerdict = {
+        status: 'RESOLVED',
+        outcome: 'EXECUTED',
+        candidatePlayerId,
+        resolvedAt,
+        hangingEffect: dayVote.hangingEffect,
+        consequenceEffects: dayVote.consequenceEffects,
+        hunterRevenge: dayVote.hunterRevenge,
+      }
+      events.push({
+        id: `offline-migrated-day-candidate-${authority.dayNumber ?? 1}`,
+        type: 'DAY_CANDIDATE_LOCKED',
+        occurredAt: resolvedAt - 1,
+        dayNumber: typeof authority.dayNumber === 'number' ? authority.dayNumber : 1,
+        candidatePlayerId,
+      })
+    } else {
+      dayVerdict = {
+        status: 'RESOLVED',
+        outcome: 'NO_CANDIDATE',
+        resolvedAt,
+      }
+      events.push({
+        id: `offline-migrated-day-no-candidate-${authority.dayNumber ?? 1}`,
+        type: 'DAY_NO_CANDIDATE',
+        occurredAt: resolvedAt,
+        dayNumber: typeof authority.dayNumber === 'number' ? authority.dayNumber : 1,
+      })
+    }
+  }
+  return {
+    authority: {
+      ...authority,
+      dayVote: null,
+      dayVerdict,
+      journal,
+    },
+    events,
+  }
+}
+
+function migrateV3OfflineSession(value: unknown): OfflineSessionState | null {
+  if (!isRecord(value) || value.schemaVersion !== 3) return null
+  const updatedAt = typeof value.updatedAt === 'number' ? value.updatedAt : 0
+  const authorityMigration = migrateV3Authority(value.authority, updatedAt)
+  const existingEvents = Array.isArray(value.offlineEvents)
+    ? value.offlineEvents
+    : []
   const migrated = {
     ...value,
     schemaVersion: offlineSessionSchemaVersion,
-    offlineEvents: synthesizedDiscoveryEvents(value),
+    authority: authorityMigration.authority,
+    authorityInput: migrateAuthorityInput(value.authorityInput),
+    offlineEvents: [...existingEvents, ...authorityMigration.events],
   }
   return isOfflineSessionState(migrated) ? migrated : null
+}
+
+function migrateV2OfflineSession(value: unknown): OfflineSessionState | null {
+  if (!isRecord(value) || value.schemaVersion !== 2) return null
+  return migrateV3OfflineSession({
+    ...value,
+    schemaVersion: 3,
+    offlineEvents: synthesizedDiscoveryEvents(value),
+  })
 }
 
 function migrateV1OfflineSession(value: unknown): OfflineSessionState | null {
@@ -347,12 +518,13 @@ function migrateV1OfflineSession(value: unknown): OfflineSessionState | null {
 
 function parseStoredSession(
   serialized: string,
-  sourceVersion: 1 | 2 | 3,
+  sourceVersion: 1 | 2 | 3 | 4,
 ): OfflineSessionState | null {
   const parsed: unknown = JSON.parse(serialized)
-  if (sourceVersion === 3) {
+  if (sourceVersion === 4) {
     return isOfflineSessionState(parsed) ? parsed : null
   }
+  if (sourceVersion === 3) return migrateV3OfflineSession(parsed)
   return sourceVersion === 2
     ? migrateV2OfflineSession(parsed)
     : migrateV1OfflineSession(parsed)
@@ -369,7 +541,7 @@ export function inspectOfflineSession(
       return { status: 'CORRUPT', state: null }
     }
     if (!serialized) continue
-    const sourceVersion = (3 - index) as 1 | 2 | 3
+    const sourceVersion = (4 - index) as 1 | 2 | 3 | 4
     try {
       const state = parseStoredSession(serialized, sourceVersion)
       if (!state) return { status: 'CORRUPT', state: null, sourceVersion }

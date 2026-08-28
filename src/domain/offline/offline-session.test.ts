@@ -224,7 +224,9 @@ describe('MS-O1 Night-1 role discovery', () => {
 
     expect(runner.state.phase).toBe('NIGHT_1_READY')
     expect(getOfflineRoleHolderIds(runner.state, 'villager')).toHaveLength(4)
-    expect(runner.state.offlineEvents.map((event) => event.roleId)).toEqual([
+    expect(runner.state.offlineEvents.flatMap((event) =>
+      event.type === 'ROLE_IDENTITY_DISCOVERED' ? [event.roleId] : [],
+    )).toEqual([
       'werewolf',
       'seer',
     ])

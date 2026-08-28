@@ -71,6 +71,8 @@ import {
 } from './room-setup'
 import type {
   FinalTargetResult,
+  DayEffect,
+  HunterDayRevenge,
   JournalEvent,
   JournalEventType,
   NightAction,
@@ -504,11 +506,13 @@ function resolveGlobalWinAtCheckpoint(
 
 function applyDayHeartbreakConsequences(
   state: RoomState,
+  consequenceStore: {
+    consequenceEffects?: DayEffect[]
+  },
   initialFinalDeaths: readonly { playerId: PlayerId; sourceEffectIds: string[] }[],
   livingPlayerIdsBefore: readonly PlayerId[],
   environment: GameEnvironment,
 ): void {
-  if (!state.dayVote) fail('Thiếu trạng thái bỏ phiếu ban ngày để ổn định hậu quả.')
   const initialDeathIds = new Set(
     initialFinalDeaths.map((death) => death.playerId),
   )
@@ -518,9 +522,9 @@ function applyDayHeartbreakConsequences(
     couple: state.cupidLovers?.couple ?? null,
     nextEffectId: environment.nextId,
   })
-  state.dayVote.consequenceEffects ??= []
+  consequenceStore.consequenceEffects ??= []
   for (const effect of stabilized.heartbreakEffects) {
-    state.dayVote.consequenceEffects.push(effect)
+    consequenceStore.consequenceEffects.push(effect)
     const target = state.players.find(
       (player) => player.id === effect.targetPlayerId,
     )
@@ -644,10 +648,16 @@ function startNight(state: RoomState, environment: GameEnvironment): boolean {
 
   const previousPhase = state.phase
   if (previousPhase === 'DAY') {
-    if (!state.dayVote || state.dayVote.status !== 'CLOSED') {
-      fail('Phải hoàn tất bỏ phiếu ban ngày trước khi bắt đầu Đêm tiếp theo.')
+    const dayResolution =
+      state.dayVote?.status === 'CLOSED'
+        ? state.dayVote
+        : state.dayVerdict?.status === 'RESOLVED'
+          ? state.dayVerdict
+          : null
+    if (!dayResolution) {
+      fail('Phải hoàn tất quyết định ban ngày trước khi bắt đầu Đêm tiếp theo.')
     }
-    if (state.dayVote.hunterRevenge?.status === 'PENDING') {
+    if (dayResolution.hunterRevenge?.status === 'PENDING') {
       fail('Phải chờ Thợ Săn hoàn tất phát bắn trả thù.')
     }
     state.dayNumber += 1
@@ -661,6 +671,7 @@ function startNight(state: RoomState, environment: GameEnvironment): boolean {
   resolveGlobalWinAtCheckpoint(state, 'START_NIGHT', environment)
   if (state.matchResult) return false
   state.dayVote = null
+  state.dayVerdict = null
   state.nightResolution = null
   state.witchCheckpoint = null
   state.night = {
@@ -1873,6 +1884,7 @@ function startDay(state: RoomState, environment: GameEnvironment): void {
   }
   state.phase = 'DAY'
   state.dayVote = null
+  state.dayVerdict = null
   appendEvent(state, environment, 'MORNING_STARTED', {
     resolution: 'DAY_DISCUSSION',
     metadata: {
@@ -1891,7 +1903,7 @@ function openDayVote(state: RoomState, environment: GameEnvironment): void {
   if (state.phase !== 'DAY') {
     fail('Chỉ mở bỏ phiếu treo cổ vào ban ngày.')
   }
-  if (state.dayVote) {
+  if (state.dayVote || state.dayVerdict) {
     fail('Mỗi Ngày chỉ có một lượt bỏ phiếu treo cổ.')
   }
   const openedAt = environment.now()
@@ -1975,58 +1987,106 @@ function closeDayVote(state: RoomState, environment: GameEnvironment): void {
     metadata: { targetIds: result.targetIds, counts: result.counts },
   })
   if (result.kind === 'UNIQUE') {
-    const targetId = result.targetIds[0]
-    const target = state.players.find((player) => player.id === targetId)
-    if (!target?.alive) fail('Mục tiêu treo cổ không còn hợp lệ.')
-    const effect = createDayHangingEffect(environment.nextId(), targetId)
-    state.dayVote.hangingEffect = effect
-    target.alive = false
-    appendEvent(state, environment, 'DAY_HANGING_CREATED', {
-      targetPlayerId: targetId,
-      resolution: 'FINAL',
-      metadata: {
-        sourceType: effect.sourceType,
-        protectorBlockable: false,
-        witchInteractable: false,
-      },
-    })
-    appendEvent(state, environment, 'PLAYER_DEATH', {
-      targetPlayerId: targetId,
-      resolution: 'DAY_HANGING',
-      metadata: { sourceEffectId: effect.id },
-    })
-    const foolResult = resolveFoolHanging(
-      {
-        players: state.players,
-        assignments: state.roleAssignments,
-        factionTransitions: state.factionTransitions,
-        cupidLovers: state.cupidLovers,
-      },
-      targetId,
-    )
-    if (foolResult.outcome === 'FOOL') {
-      finishMatch(state, foolResult, 'FOOL_DAY_HANGING', environment)
-      return
-    }
-    applyDayHeartbreakConsequences(
-      state,
-      [{ playerId: targetId, sourceEffectIds: [effect.id] }],
-      livingIds,
-      environment,
-    )
-    if (getRoleIdForPlayer(state, targetId) === 'hunter') {
-      state.dayVote.hunterRevenge = {
-        hunterPlayerId: targetId,
-        status: 'PENDING',
-      }
-      appendEvent(state, environment, 'HUNTER_HANGING_REVEALED', {
-        actorRoleId: 'hunter',
-        actorPlayerId: targetId,
-        resolution: 'REVENGE_PENDING',
-      })
-    }
+    applyDayExecution(state, result.targetIds[0], livingIds, state.dayVote, environment)
+    if (state.matchResult) return
   }
   if (state.dayVote.hunterRevenge?.status !== 'PENDING') {
+    resolveGlobalWinAtCheckpoint(state, 'DAY_STABILIZED', environment)
+  }
+}
+
+type DayConsequenceStore = {
+  hangingEffect?: DayEffect
+  consequenceEffects?: DayEffect[]
+  hunterRevenge?: HunterDayRevenge
+}
+
+function applyDayExecution(
+  state: RoomState,
+  targetId: PlayerId,
+  livingPlayerIdsBefore: readonly PlayerId[],
+  consequenceStore: DayConsequenceStore,
+  environment: GameEnvironment,
+): void {
+  const target = state.players.find((player) => player.id === targetId)
+  if (!target?.alive) fail('Mục tiêu treo cổ không còn hợp lệ.')
+  const effect = createDayHangingEffect(environment.nextId(), targetId)
+  consequenceStore.hangingEffect = effect
+  target.alive = false
+  appendEvent(state, environment, 'DAY_HANGING_CREATED', {
+    targetPlayerId: targetId,
+    resolution: 'FINAL',
+    metadata: {
+      sourceType: effect.sourceType,
+      protectorBlockable: false,
+      witchInteractable: false,
+    },
+  })
+  appendEvent(state, environment, 'PLAYER_DEATH', {
+    targetPlayerId: targetId,
+    resolution: 'DAY_HANGING',
+    metadata: { sourceEffectId: effect.id },
+  })
+  const foolResult = resolveFoolHanging(
+    {
+      players: state.players,
+      assignments: state.roleAssignments,
+      factionTransitions: state.factionTransitions,
+      cupidLovers: state.cupidLovers,
+    },
+    targetId,
+  )
+  if (foolResult.outcome === 'FOOL') {
+    finishMatch(state, foolResult, 'FOOL_DAY_HANGING', environment)
+    return
+  }
+  applyDayHeartbreakConsequences(
+    state,
+    consequenceStore,
+    [{ playerId: targetId, sourceEffectIds: [effect.id] }],
+    livingPlayerIdsBefore,
+    environment,
+  )
+  if (getRoleIdForPlayer(state, targetId) === 'hunter') {
+    consequenceStore.hunterRevenge = {
+      hunterPlayerId: targetId,
+      status: 'PENDING',
+    }
+    appendEvent(state, environment, 'HUNTER_HANGING_REVEALED', {
+      actorRoleId: 'hunter',
+      actorPlayerId: targetId,
+      resolution: 'REVENGE_PENDING',
+    })
+  }
+}
+
+function resolveModeratorDayVerdict(
+  state: RoomState,
+  candidatePlayerId: PlayerId | null,
+  execute: boolean,
+  environment: GameEnvironment,
+): void {
+  if (state.phase !== 'DAY') fail('Chỉ chốt phán quyết vào ban ngày.')
+  if (state.dayVote) fail('Phán quyết Quản trò không dùng chung với lượt bỏ phiếu Online.')
+  if (state.dayVerdict) return
+  if (candidatePlayerId === null && execute) {
+    fail('Không thể xử khi không có người bị đưa lên trăng trối.')
+  }
+  const livingIds = state.players.filter((player) => player.alive).map((player) => player.id)
+  if (candidatePlayerId !== null && !livingIds.includes(candidatePlayerId)) {
+    fail('Người bị đưa lên trăng trối phải còn sống.')
+  }
+  state.dayVerdict = {
+    status: 'RESOLVED',
+    outcome: candidatePlayerId === null ? 'NO_CANDIDATE' : execute ? 'EXECUTED' : 'SPARED',
+    candidatePlayerId: candidatePlayerId ?? undefined,
+    resolvedAt: environment.now(),
+  }
+  if (candidatePlayerId !== null && execute) {
+    applyDayExecution(state, candidatePlayerId, livingIds, state.dayVerdict, environment)
+    if (state.matchResult) return
+  }
+  if (state.dayVerdict.hunterRevenge?.status !== 'PENDING') {
     resolveGlobalWinAtCheckpoint(state, 'DAY_STABILIZED', environment)
   }
 }
@@ -2037,10 +2097,16 @@ function submitHunterRevenge(
   targetId: PlayerId | null,
   environment: GameEnvironment,
 ): void {
-  if (state.phase !== 'DAY' || state.dayVote?.status !== 'CLOSED') {
+  const consequenceStore =
+    state.dayVote?.status === 'CLOSED'
+      ? state.dayVote
+      : state.dayVerdict?.status === 'RESOLVED'
+        ? state.dayVerdict
+        : null
+  if (state.phase !== 'DAY' || !consequenceStore) {
     fail('Phát bắn trả thù chỉ tồn tại sau kết quả treo cổ hiện tại.')
   }
-  const revenge = state.dayVote.hunterRevenge
+  const revenge = consequenceStore.hunterRevenge
   if (!revenge || revenge.hunterPlayerId !== playerId) {
     fail('Chỉ Thợ Săn vừa bị treo cổ mới được trả thù.')
   }
@@ -2072,6 +2138,7 @@ function submitHunterRevenge(
     })
     applyDayHeartbreakConsequences(
       state,
+      consequenceStore,
       [{ playerId: targetId, sourceEffectIds: [effect.id] }],
       livingPlayerIdsBefore,
       environment,
@@ -2283,6 +2350,14 @@ export function applyRoomCommand(
       break
     case 'CLOSE_DAY_VOTE':
       closeDayVote(state, environment)
+      break
+    case 'RESOLVE_MODERATOR_DAY_VERDICT':
+      resolveModeratorDayVerdict(
+        state,
+        command.candidatePlayerId,
+        command.execute,
+        environment,
+      )
       break
     case 'SUBMIT_HUNTER_REVENGE':
       submitHunterRevenge(

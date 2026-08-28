@@ -25,7 +25,7 @@ import {
   type OfflineAuthorityInput,
 } from './offline-authority'
 
-export const offlineSessionSchemaVersion = 3 as const
+export const offlineSessionSchemaVersion = 4 as const
 export const offlinePlayerIdPrefix = 'offline-player-'
 
 export type OfflinePhase =
@@ -60,7 +60,34 @@ export interface OfflineRoleIdentityDiscoveredEvent {
   holderPlayerIds: PlayerId[]
 }
 
-export type OfflineSessionEvent = OfflineRoleIdentityDiscoveredEvent
+export interface OfflineDayCandidateLockedEvent {
+  id: string
+  type: 'DAY_CANDIDATE_LOCKED'
+  occurredAt: number
+  dayNumber: number
+  candidatePlayerId: PlayerId
+}
+
+export interface OfflineDayCandidateSparedEvent {
+  id: string
+  type: 'DAY_CANDIDATE_SPARED'
+  occurredAt: number
+  dayNumber: number
+  candidatePlayerId: PlayerId
+}
+
+export interface OfflineDayNoCandidateEvent {
+  id: string
+  type: 'DAY_NO_CANDIDATE'
+  occurredAt: number
+  dayNumber: number
+}
+
+export type OfflineSessionEvent =
+  | OfflineRoleIdentityDiscoveredEvent
+  | OfflineDayCandidateLockedEvent
+  | OfflineDayCandidateSparedEvent
+  | OfflineDayNoCandidateEvent
 
 export interface OfflineSessionState {
   schemaVersion: typeof offlineSessionSchemaVersion

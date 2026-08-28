@@ -7,8 +7,8 @@ import { classicRoleById } from '../roles/classic-catalog'
 import { getOfflinePlayers, type OfflineSessionState } from './offline-session'
 
 /**
- * Offline adds only physical identity discovery facts. Every gameplay line is
- * projected from the same typed RoomState journal used by Online.
+ * Offline adds physical discovery and Moderator-only Day decision facts.
+ * Gameplay consequences still come from the shared typed RoomState journal.
  */
 export function projectOfflineModeratorJournal(
   state: OfflineSessionState,
@@ -20,26 +20,40 @@ export function projectOfflineModeratorJournal(
   const identityBase = state.authority
     ? state.authority.createdAt - state.offlineEvents.length - 1
     : undefined
-  const discoveryFacts = state.offlineEvents.map(
-    (event, index): ModeratorJournalFact => ({
-      id: event.id,
-      phase: 'NIGHT',
-      cycleNumber: 1,
-      kind: 'ROLE_IDENTITIES_DISCOVERED',
-      occurredAt: identityBase === undefined
-        ? event.occurredAt
-        : identityBase + index,
-      roleName: classicRoleById[event.roleId].displayName,
-      relatedNames: event.holderPlayerIds
-        .map((playerId) => playerNameById.get(playerId))
-        .filter((name): name is string => Boolean(name)),
-    }),
+  const offlineFacts = state.offlineEvents.map(
+    (event, index): ModeratorJournalFact => {
+      if (event.type === 'ROLE_IDENTITY_DISCOVERED') {
+        return {
+          id: event.id,
+          phase: 'NIGHT',
+          cycleNumber: 1,
+          kind: 'ROLE_IDENTITIES_DISCOVERED',
+          occurredAt: identityBase === undefined
+            ? event.occurredAt
+            : identityBase + index,
+          roleName: classicRoleById[event.roleId].displayName,
+          relatedNames: event.holderPlayerIds
+            .map((playerId) => playerNameById.get(playerId))
+            .filter((name): name is string => Boolean(name)),
+        }
+      }
+      return {
+        id: event.id,
+        phase: 'DAY',
+        cycleNumber: event.dayNumber,
+        kind: event.type,
+        occurredAt: event.occurredAt,
+        targetName: event.type === 'DAY_NO_CANDIDATE'
+          ? undefined
+          : playerNameById.get(event.candidatePlayerId),
+      }
+    },
   )
   const authorityFacts = state.authority
     ? projectLocalModeratorJournal(state.authority).facts
     : []
   const uniqueFacts = new Map<string, ModeratorJournalFact>()
-  for (const fact of [...discoveryFacts, ...authorityFacts]) {
+  for (const fact of [...offlineFacts, ...authorityFacts]) {
     if (!uniqueFacts.has(fact.id)) uniqueFacts.set(fact.id, fact)
   }
   return { facts: [...uniqueFacts.values()] }
