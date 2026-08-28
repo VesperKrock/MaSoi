@@ -149,7 +149,7 @@ try {
     secureContext: window.isSecureContext,
     pathname: location.pathname,
     createHref: document.querySelector('.entry-actions a:first-child')?.getAttribute('href'),
-    joinHref: document.querySelector('.entry-actions a:last-child')?.getAttribute('href'),
+    joinHref: document.querySelector('.entry-actions a[href*="screen=join"]')?.getAttribute('href'),
     authority: document.querySelector('.local-truth')?.textContent ?? '',
     body: document.body.textContent ?? '',
     localRegistry: localStorage.getItem('masoi.ms0b.rooms.v1'),

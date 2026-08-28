@@ -9,6 +9,15 @@ import {
   isTraitorConverted,
 } from '../gameplay/faction-transitions'
 
+export type RoleTargetContext = Pick<
+  RoomState,
+  | 'players'
+  | 'roleAssignments'
+  | 'journal'
+  | 'dayNumber'
+  | 'factionTransitions'
+>
+
 export function getRoleIdForPlayer(
   state: RoomState,
   playerId: PlayerId,
@@ -34,7 +43,7 @@ export function getLivingHolders(
     .map((assignment) => assignment.playerId)
 }
 
-function roleHolders(state: RoomState) {
+function roleHolders(state: RoleTargetContext) {
   return state.roleAssignments.map((assignment) => ({
     playerId: assignment.playerId,
     roleId: assignment.roleId,
@@ -52,18 +61,22 @@ function roleHolders(state: RoomState) {
   }))
 }
 
-export function getEligibleWolfGroupActors(state: RoomState): PlayerId[] {
+export function getEligibleWolfGroupActors(
+  state: RoleTargetContext,
+): PlayerId[] {
   return getWolfGroupVoterIds(roleHolders(state))
 }
 
-export function getEligibleWolfTargets(state: RoomState): PlayerId[] {
+export function getEligibleWolfTargets(state: RoleTargetContext): PlayerId[] {
   const actorIds = new Set(getEligibleWolfGroupActors(state))
   return state.players
     .filter((player) => player.alive && !actorIds.has(player.id))
     .map((player) => player.id)
 }
 
-function previousProtectorTargetId(state: RoomState): PlayerId | undefined {
+function previousProtectorTargetId(
+  state: RoleTargetContext,
+): PlayerId | undefined {
   return [...state.journal]
     .reverse()
     .find(
@@ -74,7 +87,7 @@ function previousProtectorTargetId(state: RoomState): PlayerId | undefined {
 }
 
 export function getEligibleRoleTargets(
-  state: RoomState,
+  state: RoleTargetContext,
   roleId: RoleId,
   actorId?: PlayerId,
 ): PlayerId[] {

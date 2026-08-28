@@ -132,10 +132,36 @@ export function normalizePlayerName(name: string): string {
   return name.trim().replace(/\s+/g, ' ')
 }
 
-export function validatePlayerName(room: RoomState, name: string): string {
+export function validateNormalizedPlayerName(name: string): string {
   const normalized = normalizePlayerName(name)
   if (!normalized) return 'Tên không được để trống.'
   if ([...normalized].length > 20) return 'Tên được dài tối đa 20 ký tự.'
+  return ''
+}
+
+export function validateOrderedPlayerNames(names: readonly string[]): string[] {
+  const errors = names.map(validateNormalizedPlayerName)
+  const firstIndexByName = new Map<string, number>()
+
+  names.forEach((name, index) => {
+    const normalized = normalizePlayerName(name)
+    if (!normalized || errors[index]) return
+    const comparable = normalized.toLocaleLowerCase('vi')
+    const firstIndex = firstIndexByName.get(comparable)
+    if (firstIndex === undefined) {
+      firstIndexByName.set(comparable, index)
+      return
+    }
+    errors[index] = `Tên này trùng với người chơi số ${firstIndex + 1}.`
+  })
+
+  return errors
+}
+
+export function validatePlayerName(room: RoomState, name: string): string {
+  const normalized = normalizePlayerName(name)
+  const nameError = validateNormalizedPlayerName(normalized)
+  if (nameError) return nameError
   const comparable = normalized.toLocaleLowerCase('vi')
   if (
     room.players.some(

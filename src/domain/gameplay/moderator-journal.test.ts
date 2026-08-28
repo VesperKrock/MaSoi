@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildModeratorJournalSections,
+  projectLocalModeratorJournal,
   type ModeratorJournalFact,
 } from './moderator-journal'
+import { createDemoRoom } from '../game/room-engine'
 
 function fact(
   id: string,
@@ -23,11 +25,17 @@ describe('MS-1H2 Moderator Journal read model', () => {
   it('groups stable chronological Night, Day, and persisted result sections', () => {
     const sections = buildModeratorJournalSections({ facts: [
       fact('3', 'MATCH_FINISHED', { phase: 'RESULT', resolution: 'VILLAGE', occurredAt: 30 }),
+      fact('0', 'ROLE_IDENTITIES_DISCOVERED', {
+        roleName: 'Ma Sói', relatedNames: ['Hương', 'Châu'], occurredAt: 1,
+      }),
       fact('1', 'WOLF_FINAL_TARGET', { targetName: 'Long', occurredAt: 10 }),
       fact('2', 'DAY_VOTE_OPENED', { phase: 'DAY', occurredAt: 20 }),
     ] })
     expect(sections.map((section) => section.title)).toEqual(['ĐÊM 1', 'NGÀY 1', 'KẾT QUẢ'])
-    expect(sections[0].lines[0].text).toBe('Ma Sói chọn Long.')
+    expect(sections[0].lines.map((line) => line.text)).toEqual([
+      'Ma Sói: Hương, Châu.',
+      'Ma Sói chọn Long.',
+    ])
     expect(sections[2].lines[0].text).toBe('Kết quả: Dân Làng chiến thắng.')
   })
 
@@ -108,5 +116,79 @@ describe('MS-1H2 Moderator Journal read model', () => {
       ] })
       expect(sections[0].lines[0].text).toBe(line)
     }
+  })
+
+  it('projects local typed events into anonymous Day totals and one final outcome', () => {
+    let sequence = 0
+    const room = createDemoRoom(7, 'RANDOM_ON_TIE', {
+      now: () => 1,
+      nextId: () => `seed-${++sequence}`,
+      random: { pick: <T>(values: readonly T[]) => values[0] },
+    })
+    const [first, second] = room.players
+    room.journal = [
+      {
+        id: 'wolf-target', type: 'TARGET_SELECTED', timestamp: 10,
+        dayNumber: 1, phase: 'NIGHT', actorRoleId: 'werewolf',
+        targetPlayerId: first.id, resolution: 'UNIQUE_TOP',
+      },
+      {
+        id: 'poison', type: 'WITCH_POISON_USED', timestamp: 11,
+        dayNumber: 1, phase: 'NIGHT', targetPlayerId: first.id,
+        metadata: { effectId: 'effect-poison' },
+      },
+      {
+        id: 'wolf-effect', type: 'WOLF_ATTACK_CREATED', timestamp: 11,
+        dayNumber: 1, phase: 'NIGHT', targetPlayerId: first.id,
+        resolution: 'UNBLOCKED',
+        metadata: { effectId: 'effect-wolf', sourceType: 'WOLF_ATTACK' },
+      },
+      {
+        id: 'death', type: 'NIGHT_DEATH_FINALIZED', timestamp: 12,
+        dayNumber: 1, phase: 'NIGHT', targetPlayerId: first.id,
+        metadata: { sourceEffectIds: ['effect-wolf', 'effect-poison'] },
+      },
+      {
+        id: 'private-vote', type: 'DAY_VOTE_CHANGED', timestamp: 20,
+        dayNumber: 1, phase: 'DAY', actorPlayerId: second.id,
+        targetPlayerId: first.id,
+      },
+      {
+        id: 'day-result', type: 'HANGING_RESULT', timestamp: 21,
+        dayNumber: 1, phase: 'DAY', resolution: 'UNIQUE',
+        targetPlayerId: first.id,
+        metadata: { counts: { [first.id]: 3, [second.id]: 0 } },
+      },
+      {
+        id: 'redundant-final', type: 'FINAL_RESULT', timestamp: 30,
+        dayNumber: 1, phase: 'DAY', resolution: 'VILLAGE',
+      },
+      {
+        id: 'match-ended', type: 'MATCH_ENDED', timestamp: 31,
+        dayNumber: 1, phase: 'DAY', resolution: 'VILLAGE',
+      },
+    ]
+    room.matchResult = {
+      outcome: 'VILLAGE',
+      finishedAt: 31,
+      finishedPhase: 'DAY',
+      dayNumber: 1,
+      trigger: 'DAY_STABILIZED',
+      subjectPlayerIds: [],
+    }
+
+    const snapshot = projectLocalModeratorJournal(room)
+    expect(snapshot.facts.filter((entry) => entry.kind === 'MATCH_FINISHED')).toHaveLength(1)
+    expect(snapshot.facts.some((entry) => entry.id === 'private-vote')).toBe(false)
+    expect(snapshot.facts.find((entry) => entry.id === 'day-result')?.totals).toEqual([
+      { targetName: first.alias, total: 3 },
+    ])
+    expect(snapshot.facts.find((entry) => entry.id === 'death')?.sourceTypes).toEqual([
+      'WOLF_ATTACK',
+      'WITCH_POISON',
+    ])
+    const lines = buildModeratorJournalSections(snapshot)
+      .flatMap((section) => section.lines.map((line) => line.text))
+    expect(lines).toContain(`${first.alias} chết do Ma Sói và Bình Độc.`)
   })
 })

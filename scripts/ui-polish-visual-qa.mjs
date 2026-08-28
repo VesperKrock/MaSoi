@@ -149,7 +149,7 @@ try {
   await landing.waitForSelector('.entry-actions')
   await capture(landing, 'player-landing-320x568', {
     create: '.entry-actions a:first-child',
-    join: '.entry-actions a:last-child',
+    join: '.entry-actions a[href*="screen=join"]',
   })
 
   const join = await browser.newPage()

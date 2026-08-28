@@ -1,5 +1,14 @@
 import type { RoleId } from './classic-catalog'
 
+export type RoleActionType =
+  | 'WOLF_VOTE'
+  | 'SELECT_TARGET'
+  | 'HUNTER_PRELOCK'
+  | 'SERIAL_KILLER_ATTACK'
+  | 'WITCH_DECISION'
+  | 'CUPID_PAIRING'
+  | 'NONE'
+
 export interface RoleDefinition {
   id: RoleId
   displayName: string
@@ -8,14 +17,7 @@ export interface RoleDefinition {
   actsAtNight: boolean
   nightOrder: number | null
   firstNightOnly: boolean
-  actionType:
-    | 'WOLF_VOTE'
-    | 'SELECT_TARGET'
-    | 'HUNTER_PRELOCK'
-    | 'SERIAL_KILLER_ATTACK'
-    | 'WITCH_DECISION'
-    | 'CUPID_PAIRING'
-    | 'NONE'
+  actionType: RoleActionType
   targetRule: 'LIVING_NON_WOLF' | 'LIVING_OTHER' | 'LIVING_ANY' | 'NONE'
   nightStage: 'PRE_WITCH' | 'FINAL_CHECKPOINT' | null
   description: string
@@ -140,6 +142,62 @@ export const roleDefinitions: Partial<Record<RoleId, RoleDefinition>> = {
     nightStage: null,
     description: 'Cùng dân làng tìm ra Ma Sói.',
     instructions: 'Quan sát, thảo luận và bỏ phiếu vào ban ngày.',
+  },
+  traitor: {
+    id: 'traitor',
+    displayName: 'Kẻ Phản Bội',
+    team: 'WEREWOLF',
+    cardAsset: null,
+    actsAtNight: false,
+    nightOrder: null,
+    firstNightOnly: false,
+    actionType: 'NONE',
+    targetRule: 'NONE',
+    nightStage: null,
+    description: 'Thức cùng bầy Sói nhưng không trực tiếp tạo đòn cắn.',
+    instructions: 'Gọi theo nghi thức, xác nhận danh tính rồi đi ngủ.',
+  },
+  'half-wolf': {
+    id: 'half-wolf',
+    displayName: 'Bán Sói',
+    team: 'VILLAGE',
+    cardAsset: null,
+    actsAtNight: false,
+    nightOrder: null,
+    firstNightOnly: false,
+    actionType: 'NONE',
+    targetRule: 'NONE',
+    nightStage: null,
+    description: 'Bắt đầu phía Dân và có thể hóa Sói sau khi bị cắn.',
+    instructions: 'Gọi theo nghi thức; chuyển phe do shared faction resolver xử lý.',
+  },
+  mayor: {
+    id: 'mayor',
+    displayName: 'Thị Trưởng',
+    team: 'VILLAGE',
+    cardAsset: null,
+    actsAtNight: false,
+    nightOrder: null,
+    firstNightOnly: false,
+    actionType: 'NONE',
+    targetRule: 'NONE',
+    nightStage: null,
+    description: 'Phiếu ban ngày có trọng số hai.',
+    instructions: 'Gọi theo nghi thức, xác nhận rồi đi ngủ.',
+  },
+  fool: {
+    id: 'fool',
+    displayName: 'Thằng Ngố',
+    team: 'SOLO',
+    cardAsset: null,
+    actsAtNight: false,
+    nightOrder: null,
+    firstNightOnly: false,
+    actionType: 'NONE',
+    targetRule: 'NONE',
+    nightStage: null,
+    description: 'Thắng ngay khi bị treo cổ vào ban ngày.',
+    instructions: 'Gọi theo nghi thức, xác nhận rồi đi ngủ.',
   },
 }
 

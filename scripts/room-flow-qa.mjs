@@ -54,7 +54,7 @@ try {
   const entryLabels = await landing.$$eval('.entry-actions a', (links) =>
     links.map((link) => link.textContent?.trim()),
   )
-  if (entryLabels.join('|') !== 'Tạo phòng|Vào phòng') {
+  if (entryLabels.join('|') !== 'Tạo phòng|Vào phòng|QUẢN TRÒ 1 MÁY') {
     throw new Error(`Landing actions sai: ${entryLabels.join('|')}`)
   }
   await landing.close()

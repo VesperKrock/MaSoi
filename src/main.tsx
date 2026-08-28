@@ -5,7 +5,10 @@ import { createConfiguredRoomTransport } from './transport/create-room-transport
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)
-const transport = createConfiguredRoomTransport(params.get('transport'))
+const transport =
+  params.get('screen') === 'offline'
+    ? null
+    : createConfiguredRoomTransport(params.get('transport'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

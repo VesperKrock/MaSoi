@@ -183,7 +183,7 @@ export function ModeratorEndMatch({
 }: {
   endMatch: EndMatchSnapshot
   homeHref: string
-  onOpenJournal: () => void
+  onOpenJournal?: () => void
 }) {
   const playerNameById = new Map(
     endMatch.roster.map((entry) => [entry.player.id, entry.player.alias]),
@@ -193,9 +193,11 @@ export function ModeratorEndMatch({
       <section className="panel moderator-end-result">
         <ResultSummary endMatch={endMatch} />
         <div className="moderator-end-actions">
-          <button className="button secondary" onClick={onOpenJournal}>
-            Nhật ký
-          </button>
+          {onOpenJournal && (
+            <button className="button secondary" onClick={onOpenJournal}>
+              Nhật ký
+            </button>
+          )}
           <a className="button primary link-button" href={homeHref}>
             Về trang chủ
           </a>

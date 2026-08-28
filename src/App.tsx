@@ -8,11 +8,12 @@ import { CreateRoomView } from './views/entry/create-room-view'
 import { JoinRoomView } from './views/entry/join-room-view'
 import { LandingView } from './views/entry/landing-view'
 import { ModeratorView } from './views/moderator/moderator-view'
+import { OfflineModeratorView } from './views/offline/offline-moderator-view'
 import { PlayerView } from './views/player/player-view'
 import { ZeroScrollHarness } from './views/dev/zero-scroll-harness'
 
 interface AppProps {
-  transport: RoomTransport
+  transport: RoomTransport | null
 }
 
 function RoomExperience({
@@ -103,6 +104,9 @@ export function App({ transport }: AppProps) {
   if (import.meta.env.DEV && params.get('dev') === 'zero-scroll') {
     return <ZeroScrollHarness surface={params.get('surface') ?? 'landing'} />
   }
+  const screen = params.get('screen')
+  if (screen === 'offline') return <OfflineModeratorView />
+  if (!transport) return null
   const roomId = params.get('room')
   const playerId = params.get('player')
   const isModerator = params.get('as') === 'moderator'
@@ -126,7 +130,6 @@ export function App({ transport }: AppProps) {
     )
   }
 
-  const screen = params.get('screen')
   if (screen === 'create') return <CreateRoomView transport={transport} />
   if (screen === 'join') return <JoinRoomView transport={transport} />
   return <LandingView transportKind={transport.kind} />

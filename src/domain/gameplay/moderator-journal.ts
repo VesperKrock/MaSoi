@@ -1,6 +1,7 @@
 import type { JournalEvent, MatchOutcome, RoomState } from '../game/types'
 
 export const moderatorJournalFactKinds = [
+  'ROLE_IDENTITIES_DISCOVERED',
   'WOLF_REVOTE_STARTED',
   'WOLF_FINAL_TARGET',
   'PROTECTOR_INTENT',
@@ -38,6 +39,7 @@ export interface ModeratorJournalFact {
   kind: ModeratorJournalFactKind
   occurredAt: number
   actorName?: string
+  roleName?: string
   targetName?: string
   relatedNames?: string[]
   resolution?: string
@@ -90,6 +92,10 @@ function outcomeLine(outcome: string | undefined): string | undefined {
 function factLines(fact: ModeratorJournalFact): string[] {
   const target = fact.targetName ?? 'Không ai'
   switch (fact.kind) {
+    case 'ROLE_IDENTITIES_DISCOVERED':
+      return fact.roleName && fact.relatedNames?.length
+        ? [`${fact.roleName}: ${fact.relatedNames.join(', ')}.`]
+        : []
     case 'WOLF_REVOTE_STARTED':
       return ['Phiếu Sói hòa → chọn lại.']
     case 'WOLF_FINAL_TARGET':
@@ -214,26 +220,85 @@ function playerName(state: RoomState, playerId: unknown): string | undefined {
 }
 
 function localPhase(event: JournalEvent): ModeratorJournalFact['phase'] {
-  if (event.type === 'MATCH_ENDED' || event.type === 'FINAL_RESULT') return 'RESULT'
+  if (event.type === 'MATCH_ENDED') return 'RESULT'
   return event.phase === 'DAY' ? 'DAY' : 'NIGHT'
+}
+
+function localFactKind(event: JournalEvent): ModeratorJournalFactKind | null {
+  if (event.type === 'MATCH_ENDED') return 'MATCH_FINISHED'
+  if (event.type === 'HANGING_RESULT') return 'DAY_VOTE_RESOLVED'
+  if (event.type === 'TARGET_SELECTED' && event.actorRoleId === 'werewolf') {
+    return 'WOLF_FINAL_TARGET'
+  }
+  return moderatorJournalFactKinds.includes(
+    event.type as ModeratorJournalFactKind,
+  )
+    ? event.type as ModeratorJournalFactKind
+    : null
+}
+
+function effectSourceType(event: JournalEvent): string | undefined {
+  if (typeof event.metadata?.sourceType === 'string') {
+    return event.metadata.sourceType
+  }
+  switch (event.type) {
+    case 'WITCH_POISON_USED': return 'WITCH_POISON'
+    case 'HUNTER_SHOT_CREATED': return 'HUNTER_SHOT'
+    case 'LOVER_HEARTBREAK_CREATED': return 'LOVER_HEARTBREAK'
+    case 'WOLF_ATTACK_CREATED': return 'WOLF_ATTACK'
+    case 'SERIAL_KILLER_ATTACK_CREATED': return 'SERIAL_KILLER_ATTACK'
+    default: return undefined
+  }
+}
+
+function voteTotals(
+  state: RoomState,
+  event: JournalEvent,
+): ModeratorJournalVoteTotal[] | undefined {
+  if (event.type !== 'HANGING_RESULT' || !event.metadata?.counts) return undefined
+  const counts = event.metadata.counts
+  if (typeof counts !== 'object' || counts === null || Array.isArray(counts)) {
+    return undefined
+  }
+  return Object.entries(counts)
+    .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    .map(([playerId, total]) => ({
+      targetName: playerName(state, playerId) ?? 'Không rõ',
+      total,
+    }))
+    .filter(({ total }) => total > 0)
+    .sort((left, right) => right.total - left.total || left.targetName.localeCompare(right.targetName, 'vi'))
 }
 
 /** Local transport counterpart of the server read model. */
 export function projectLocalModeratorJournal(
   state: RoomState,
 ): ModeratorJournalSnapshot {
-  const supported = new Set<string>(moderatorJournalFactKinds)
+  const sourceByEffectId = new Map<string, string>()
+  for (const event of state.journal) {
+    const effectId = event.metadata?.effectId
+    const sourceType = effectSourceType(event)
+    if (typeof effectId === 'string' && sourceType) {
+      sourceByEffectId.set(effectId, sourceType)
+    }
+  }
   const facts = state.journal.flatMap((event): ModeratorJournalFact[] => {
-    const kind = event.type === 'MATCH_ENDED' || event.type === 'FINAL_RESULT'
-      ? 'MATCH_FINISHED'
-      : event.type
-    if (!supported.has(kind)) return []
+    const kind = localFactKind(event)
+    if (!kind) return []
     const relatedIds = Array.isArray(event.metadata?.loverPlayerIds)
       ? event.metadata.loverPlayerIds
       : []
-    const sourceTypes = Array.isArray(event.metadata?.sourceTypes)
+    let sourceTypes = Array.isArray(event.metadata?.sourceTypes)
       ? event.metadata.sourceTypes.filter((value): value is string => typeof value === 'string')
       : undefined
+    if (event.type === 'NIGHT_DEATH_FINALIZED') {
+      const sourceEffectIds = Array.isArray(event.metadata?.sourceEffectIds)
+        ? event.metadata.sourceEffectIds
+        : []
+      sourceTypes = sourceEffectIds
+        .map((effectId) => typeof effectId === 'string' ? sourceByEffectId.get(effectId) : undefined)
+        .filter((value): value is string => Boolean(value))
+    }
     return [{
       id: event.id,
       phase: localPhase(event),
@@ -248,6 +313,7 @@ export function projectLocalModeratorJournal(
       resolution: event.type === 'MATCH_ENDED'
         ? state.matchResult?.outcome
         : event.resolution,
+      totals: voteTotals(state, event),
       sourceTypes,
       random: event.metadata?.random === true,
     }]
