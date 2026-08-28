@@ -1,13 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MaSoi wolf">
-  <rect width="64" height="64" rx="14" fill="#11100e"/>
-  <path
-    fill="#d8aa55"
-    d="M8 7l16 9 8-7 8 7 16-9-5 27c-2 11-10 20-19 25-9-5-17-14-19-25L8 7Z"
-  />
-  <path
-    fill="#11100e"
-    d="m17 18 11 7 4-6 4 6 11-7-4 17-7-4-4 17-4-17-7 4-4-17Z"
-  />
-  <path fill="#d8aa55" d="m21 27 8 2-6 4-2-6Zm22 0-8 2 6 4 2-6Z"/>
-  <path fill="#d8aa55" d="m27 45 5 3 5-3-5 8-5-8Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MaSoi wolf emoji">
+  <text
+    x="32"
+    y="55"
+    font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif"
+    font-size="58"
+    text-anchor="middle"
+  >🐺</text>
 </svg>
