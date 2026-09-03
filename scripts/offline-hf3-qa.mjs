@@ -12,7 +12,8 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineKey = 'masoi.offline-moderator.session.v4'
+const offlineKey = 'masoi.offline-moderator.session.v5'
+const legacyOfflineKey = 'masoi.offline-moderator.session.v4'
 const mobileViewports = [
   { width: 320, height: 568 },
   { width: 360, height: 640 },
@@ -124,7 +125,7 @@ async function seed(page, origin) {
   await page.evaluate(({ key, value }) => {
     localStorage.clear()
     localStorage.setItem(key, JSON.stringify(value))
-  }, { key: offlineKey, value: dayState() })
+  }, { key: legacyOfflineKey, value: dayState() })
   await page.goto(`${origin}/?screen=offline`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-day-decision')
 }

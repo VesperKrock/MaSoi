@@ -9,6 +9,7 @@ import {
   loadOfflineSession,
   legacyOfflineSessionStorageKey,
   offlineSessionStorageKey,
+  offlineSessionV4StorageKey,
   offlineSessionV3StorageKey,
   offlineSessionV2StorageKey,
   saveOfflineSession,
@@ -55,16 +56,77 @@ describe('MS-O1 offline persistence', () => {
 
     state = reduceOfflineSession(
       state,
-      { type: 'BEGIN_NIGHT_ONE_DISCOVERY' },
+      { type: 'BEGIN_OFFLINE_MATCH' },
       21,
     )
     state = reduceOfflineSession(
       state,
-      { type: 'TOGGLE_HOLDER', playerId: 'offline-player-4' },
+      { type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' },
       22,
+    )
+    state = reduceOfflineSession(
+      state,
+      { type: 'TOGGLE_HOLDER', roleId: 'werewolf', playerId: 'offline-player-4' },
+      23,
     )
     expect(saveOfflineSession(storage, state)).toBe(true)
     expect(loadOfflineSession(storage)).toEqual(state)
+  })
+
+  it('restores every HF4 holder, action, result, sleep and between-call boundary', () => {
+    const storage = new MemoryStorage()
+    let state = createOfflineSessionState(1)
+    let now = 2
+    const dispatch = (command: Parameters<typeof reduceOfflineSession>[1]) => {
+      state = reduceOfflineSession(state, command, now)
+      now += 1
+    }
+    const roundTrip = () => {
+      expect(saveOfflineSession(storage, state)).toBe(true)
+      const restored = loadOfflineSession(storage)
+      expect(restored).toEqual(state)
+      if (!restored) throw new Error('Expected persisted HF4 session')
+      state = restored
+    }
+    for (let index = 0; index < 7; index += 1) {
+      dispatch({ type: 'SET_PLAYER_NAME', index, name: `Người ${index + 1}` })
+    }
+    dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
+    dispatch({ type: 'BEGIN_OFFLINE_MATCH' })
+    dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    roundTrip()
+
+    dispatch({ type: 'TOGGLE_HOLDER', roleId: 'werewolf', playerId: 'offline-player-1' })
+    roundTrip()
+    dispatch({ type: 'TOGGLE_HOLDER', roleId: 'werewolf', playerId: 'offline-player-2' })
+    dispatch({ type: 'CONFIRM_HOLDERS' })
+    expect(state.authority?.night?.activeRoleId).toBe('werewolf')
+    roundTrip()
+
+    dispatch({ type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT', targetId: 'offline-player-4' })
+    roundTrip()
+    dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    const wolfJournalSize = state.authority?.journal.length
+    expect(state.nightRitual.activeStep?.kind).toBe('CALL_COMPLETE')
+    roundTrip()
+    expect(state.authority?.journal.length).toBe(wolfJournalSize)
+
+    dispatch({ type: 'ADVANCE_FROM_COMPLETED_RITUAL' })
+    expect(state.nightRitual.activeStep).toBeNull()
+    roundTrip()
+    dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    dispatch({ type: 'TOGGLE_HOLDER', roleId: 'seer', playerId: 'offline-player-3' })
+    dispatch({ type: 'CONFIRM_HOLDERS' })
+    dispatch({ type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT', targetId: 'offline-player-1' })
+    dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    expect(state.authority?.night?.actionsByRole.seer?.seer?.result).toBe('WOLF')
+    roundTrip()
+    dispatch({ type: 'ACKNOWLEDGE_OFFLINE_SEER_RESULT' })
+    expect(state.nightRitual.activeStep).toEqual({
+      kind: 'CALL_COMPLETE',
+      roleId: 'seer',
+    })
+    roundTrip()
   })
 
   it('uses a versioned namespace isolated from Online room storage', () => {
@@ -74,7 +136,7 @@ describe('MS-O1 offline persistence', () => {
     saveOfflineSession(storage, createOfflineSessionState(1))
 
     expect(offlineSessionStorageKey).toBe(
-      'masoi.offline-moderator.session.v4',
+      'masoi.offline-moderator.session.v5',
     )
     expect(offlineSessionStorageKey).not.toBe(onlineKey)
     expect(storage.getItem(onlineKey)).toBe('{"online":"untouched"}')
@@ -106,7 +168,7 @@ describe('MS-O1 offline persistence', () => {
     )
 
     expect(loadOfflineSession(storage)).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       phase: 'SETUP',
       playerNames: current.playerNames,
       roleComposition: current.roleComposition,
@@ -146,8 +208,8 @@ describe('MS-O1 offline persistence', () => {
 
     const migrated = loadOfflineSession(storage)
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
-      phase: 'NIGHT_1_DISCOVERY',
+      schemaVersion: 5,
+      phase: 'PHYSICAL_DEAL',
       roleAssignments: current.roleAssignments,
     })
     expect(migrated?.offlineEvents).toEqual([{
@@ -157,6 +219,111 @@ describe('MS-O1 offline persistence', () => {
       roleId: 'werewolf',
       holderPlayerIds: ['offline-player-1', 'offline-player-2'],
     }])
+  })
+
+  it('migrates partial and complete v4 discover-all snapshots without losing known holders', () => {
+    const base = createOfflineSessionState(20)
+    const common = {
+      mode: 'OFFLINE_MODERATOR',
+      seatCount: 7,
+      playerNames: Array.from({ length: 7 }, (_, index) => `Người ${index + 1}`),
+      roleComposition: { villager: 3, werewolf: 2, traitor: 1, seer: 1 },
+      offlineEvents: [],
+      authority: null,
+      authorityInput: {
+        cupidTargetIds: [],
+        witchResurrectionTargetId: null,
+        witchPoisonTargetId: null,
+        dayDecision: {
+          stage: 'CANDIDATE_DRAFT',
+          selection: { kind: 'UNSET' },
+        },
+      },
+      blockingError: null,
+      updatedAt: base.updatedAt,
+    }
+    const partialStorage = new MemoryStorage()
+    partialStorage.setItem(offlineSessionV4StorageKey, JSON.stringify({
+      ...common,
+      schemaVersion: 4,
+      phase: 'NIGHT_1_DISCOVERY',
+      authorityInput: {
+        ...common.authorityInput,
+        dayDecision: {
+          stage: 'LAST_WORDS',
+          candidatePlayerId: 'offline-player-4',
+          verdictDraft: 'SPARE',
+        },
+      },
+      roleAssignments: [
+        { playerId: 'offline-player-1', roleId: 'werewolf' },
+      ],
+      nightOne: {
+        callPlan: ['traitor', 'werewolf', 'seer'],
+        callIndex: 1,
+        activeStep: {
+          kind: 'HOLDER_DISCOVERY',
+          roleId: 'werewolf',
+          requiredHolderCount: 2,
+        },
+        draftHolderIds: [],
+      },
+    }))
+    const partial = inspectOfflineSession(partialStorage)
+    expect(partial.sourceVersion).toBe(4)
+    expect(partial.state).toMatchObject({
+      schemaVersion: 5,
+      phase: 'PHYSICAL_DEAL',
+      roleAssignments: [
+        { playerId: 'offline-player-1', roleId: 'werewolf' },
+      ],
+      nightRitual: {
+        callPlan: ['werewolf', 'seer'],
+        callIndex: 0,
+        activeStep: null,
+      },
+      authorityInput: {
+        dayDecision: {
+          stage: 'LAST_WORDS',
+          candidatePlayerId: 'offline-player-4',
+          verdictDraft: 'SPARE',
+        },
+      },
+    })
+
+    const completeStorage = new MemoryStorage()
+    completeStorage.setItem(offlineSessionV4StorageKey, JSON.stringify({
+      ...common,
+      schemaVersion: 4,
+      phase: 'NIGHT_1_READY',
+      roleAssignments: [
+        { playerId: 'offline-player-1', roleId: 'werewolf' },
+        { playerId: 'offline-player-2', roleId: 'werewolf' },
+        { playerId: 'offline-player-3', roleId: 'traitor' },
+        { playerId: 'offline-player-4', roleId: 'seer' },
+        ...[5, 6, 7].map((seat) => ({
+          playerId: `offline-player-${seat}`,
+          roleId: 'villager',
+        })),
+      ],
+      nightOne: {
+        callPlan: ['traitor', 'werewolf', 'seer'],
+        callIndex: 3,
+        activeStep: null,
+        draftHolderIds: [],
+      },
+    }))
+    let complete = loadOfflineSession(completeStorage)
+    expect(complete?.phase).toBe('PHYSICAL_DEAL')
+    if (!complete) throw new Error('Expected migrated complete v4 session')
+    complete = reduceOfflineSession(complete, { type: 'BEGIN_OFFLINE_MATCH' }, 30)
+    complete = reduceOfflineSession(
+      complete,
+      { type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' },
+      31,
+    )
+    expect(complete.nightRitual.activeStep?.kind).toBe('ROLE_ACTION')
+    expect(complete.authority?.night?.activeRoleId).toBe('werewolf')
   })
 
   it('migrates v3 Day ballots to a duplicate-free Moderator verdict boundary', () => {
@@ -239,7 +406,7 @@ describe('MS-O1 offline persistence', () => {
 
     const migrated = inspectOfflineSession(storage)
     expect(migrated.sourceVersion).toBe(3)
-    expect(migrated.state?.schemaVersion).toBe(4)
+    expect(migrated.state?.schemaVersion).toBe(5)
     expect(migrated.state?.authority?.dayVote).toBeNull()
     expect(migrated.state?.authority?.dayVerdict).toMatchObject({
       outcome: 'EXECUTED',
@@ -284,12 +451,14 @@ describe('MS-O1 offline persistence', () => {
     const onlineKey = 'masoi.ms0b.rooms.v1'
     storage.setItem(onlineKey, '{"online":"untouched"}')
     storage.setItem(offlineSessionStorageKey, '{}')
+    storage.setItem(offlineSessionV4StorageKey, '{}')
     storage.setItem(offlineSessionV3StorageKey, '{}')
     storage.setItem(offlineSessionV2StorageKey, '{}')
     storage.setItem(legacyOfflineSessionStorageKey, '{}')
 
     expect(clearOfflineSession(storage)).toBe(true)
     expect(storage.getItem(offlineSessionStorageKey)).toBeNull()
+    expect(storage.getItem(offlineSessionV4StorageKey)).toBeNull()
     expect(storage.getItem(offlineSessionV3StorageKey)).toBeNull()
     expect(storage.getItem(offlineSessionV2StorageKey)).toBeNull()
     expect(storage.getItem(legacyOfflineSessionStorageKey)).toBeNull()

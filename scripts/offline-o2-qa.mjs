@@ -15,7 +15,8 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineKey = 'masoi.offline-moderator.session.v4'
+const offlineKey = 'masoi.offline-moderator.session.v5'
+const legacyOfflineKey = 'masoi.offline-moderator.session.v4'
 const onlineKey = 'masoi.ms0b.rooms.v1'
 const mobileViewports = [
   { width: 320, height: 568 },
@@ -163,20 +164,26 @@ try {
     '{"online":"untouched-o2"}',
   )
   await page.evaluate(
-    (key, state) => localStorage.setItem(key, JSON.stringify(state)),
-    offlineKey,
-    readyState([
-      'werewolf',
-      'werewolf',
-      'seer',
-      'villager',
-      'villager',
-      'villager',
-      'villager',
-    ]),
+    ({ currentKey, legacyKey, state }) => {
+      localStorage.removeItem(currentKey)
+      localStorage.setItem(legacyKey, JSON.stringify(state))
+    },
+    {
+      currentKey: offlineKey,
+      legacyKey: legacyOfflineKey,
+      state: readyState([
+        'werewolf',
+        'werewolf',
+        'seer',
+        'villager',
+        'villager',
+        'villager',
+        'villager',
+      ]),
+    },
   )
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.click('.offline-final-roster .offline-primary-action')
+  await page.click('.offline-checkpoint-layout .offline-primary-action')
   await page.waitForSelector('.offline-match-layout')
   await inspectViewports(page, 'night-1-ready')
 
@@ -185,9 +192,12 @@ try {
   const wolfHasNoAbstain = !(await page.$('.offline-active-call .button.secondary'))
   invariant(wolfHasNoAbstain, 'Wolf Offline có lựa chọn Không chọn.')
   await clickByText(page, '.offline-match-targets button', 'Người 4')
+  await page.click('.offline-action-card > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.waitForSelector('.offline-next-call')
   await page.click('.offline-next-call .button.primary')
   await clickByText(page, '.offline-match-targets button', 'Người 1')
+  await page.click('.offline-action-card > .button.primary')
   await page.waitForSelector('.offline-seer-result')
 
   const midSeer = await page.evaluate((key) => localStorage.getItem(key), offlineKey)
@@ -198,6 +208,7 @@ try {
     'Refresh giữa action Tiên Tri làm đổi authority state.',
   )
   await page.click('.offline-seer-result .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.waitForSelector('.offline-night-finalize')
   await page.click('.offline-night-finalize .button.primary')
   await page.waitForSelector('.offline-morning-checkpoint')
@@ -233,12 +244,16 @@ try {
   )
 
   await page.evaluate(
-    (key, state) => localStorage.setItem(key, JSON.stringify(state)),
-    offlineKey,
+    ({ currentKey, legacyKey, state }) => {
+      localStorage.removeItem(currentKey)
+      localStorage.setItem(legacyKey, JSON.stringify(state))
+    },
+    { currentKey: offlineKey, legacyKey: legacyOfflineKey, state:
     readyState(Array.from({ length: 7 }, () => 'villager')),
+    },
   )
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.click('.offline-final-roster .offline-primary-action')
+  await page.click('.offline-checkpoint-layout .offline-primary-action')
   await page.waitForSelector('.moderator-end-match')
   invariant((await page.$$('.moderator-final-roster .final-roster-row')).length === 7, 'Final roster thiếu người.')
   invariant(

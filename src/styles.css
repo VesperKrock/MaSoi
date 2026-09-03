@@ -3530,6 +3530,36 @@ label,
   line-height: 1.45;
 }
 
+.offline-interleaved-discovery {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.offline-holder-group {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #15130f;
+}
+
+.offline-holder-group .offline-selection-status,
+.offline-holder-group .offline-holder-selector {
+  margin-bottom: 0;
+}
+
+.offline-holder-selector button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.offline-call-complete {
+  border-color: #43543c;
+}
+
 .offline-action-card,
 .offline-witch-action {
   display: grid;

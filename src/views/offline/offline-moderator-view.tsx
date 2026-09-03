@@ -6,10 +6,7 @@ import {
   minimumSeatCount,
 } from '../../domain/game/room-setup'
 import {
-  getOfflineEligibleActionTargetIds,
   getOfflinePlayers,
-  getOfflineRoleHolderIds,
-  getUnassignedOfflinePlayerIds,
   validateOfflineSetup,
   type OfflineSessionCommand,
   type OfflineSessionState,
@@ -17,7 +14,6 @@ import {
 import { projectOfflineModeratorJournal } from '../../domain/offline/offline-journal'
 import type { OfflineSessionStorageStatus } from '../../domain/offline/offline-storage'
 import {
-  classicRoleById,
   classicRoleCatalog,
   roleMarketGroupLabels,
   type RoleId,
@@ -288,217 +284,10 @@ function PhysicalDeal({
 
       <button
         className="button primary offline-primary-action"
-        onClick={() => dispatch({ type: 'BEGIN_NIGHT_ONE_DISCOVERY' })}
+        onClick={() => dispatch({ type: 'BEGIN_OFFLINE_MATCH' })}
       >
-        Bắt đầu Đêm 1 — khám phá vai
+        Đã phát bài — Bắt đầu Đêm 1
       </button>
-    </main>
-  )
-}
-
-function NightOneDiscovery({
-  state,
-  dispatch,
-}: {
-  state: OfflineSessionState
-  dispatch: (command: OfflineSessionCommand) => void
-}) {
-  const players = getOfflinePlayers(state)
-  const playerById = new Map(players.map((player) => [player.id, player]))
-  const step = state.nightOne.activeStep
-  if (!step) return null
-  const role = classicRoleById[step.roleId]
-  const callNumber = state.nightOne.callIndex + 1
-
-  if (step.kind === 'HOLDER_DISCOVERY') {
-    const unassignedIds = getUnassignedOfflinePlayerIds(state)
-    const selectedIds = new Set(state.nightOne.draftHolderIds)
-    return (
-      <main className="offline-layout offline-discovery-layout">
-        <header className="offline-heading">
-          <div>
-            <p className="eyebrow">
-              Đêm 1 · Lượt {callNumber}/{state.nightOne.callPlan.length}
-            </p>
-            <h1>AI LÀ {role.displayName.toLocaleUpperCase('vi')}?</h1>
-            <p>Chỉ chọn người chưa được xác định vai.</p>
-          </div>
-          <span className="offline-phase-pill">TÌM NGƯỜI GIỮ VAI</span>
-        </header>
-
-        <section className="panel offline-holder-panel">
-          <div className="offline-selection-status">
-            <span>Cần chọn đúng</span>
-            <strong>
-              {state.nightOne.draftHolderIds.length} / {step.requiredHolderCount}
-            </strong>
-          </div>
-          <div className="offline-holder-selector" aria-label={`Người giữ vai ${role.displayName}`}>
-            {unassignedIds.map((playerId) => {
-              const player = playerById.get(playerId)
-              if (!player) return null
-              const selected = selectedIds.has(playerId)
-              return (
-                <button
-                  className={selected ? 'selected' : ''}
-                  key={player.id}
-                  aria-pressed={selected}
-                  onClick={() => dispatch({ type: 'TOGGLE_HOLDER', playerId })}
-                >
-                  <span>#{player.seat}</span>
-                  <strong>{player.alias}</strong>
-                  <small>{selected ? 'Đã chọn' : 'Chưa có vai'}</small>
-                </button>
-              )
-            })}
-          </div>
-          {state.blockingError && (
-            <p className="inline-error" role="alert">
-              {state.blockingError}
-            </p>
-          )}
-          <button
-            className="button primary offline-primary-action"
-            disabled={
-              state.nightOne.draftHolderIds.length !== step.requiredHolderCount
-            }
-            onClick={() => dispatch({ type: 'CONFIRM_HOLDERS' })}
-          >
-            Xác nhận người giữ vai
-          </button>
-        </section>
-      </main>
-    )
-  }
-
-  const holderIds = getOfflineRoleHolderIds(state, step.roleId)
-  const targetIds = getOfflineEligibleActionTargetIds(state)
-  const noAction = step.actionType === 'NONE'
-  return (
-    <main className="offline-layout offline-discovery-layout">
-      <header className="offline-heading">
-        <div>
-          <p className="eyebrow">
-            Đêm 1 · Lượt {callNumber}/{state.nightOne.callPlan.length}
-          </p>
-          <h1>{role.displayName}</h1>
-          <p>
-            Người giữ vai:{' '}
-            <strong>
-              {holderIds
-                .map((playerId) => playerById.get(playerId)?.alias)
-                .join(', ')}
-            </strong>
-          </p>
-        </div>
-        <span className="offline-phase-pill">ROLE_ACTION · {step.actionType}</span>
-      </header>
-
-      <section className="panel offline-action-handoff">
-        {noAction ? (
-          <div className="offline-no-action">
-            <span aria-hidden="true">—</span>
-            <h2>Vai này không có hành động Đêm</h2>
-            <p>Danh tính đã được ghi nhận. Kết thúc lượt gọi theo nghi thức.</p>
-          </div>
-        ) : (
-          <>
-            <div className="section-title">
-              <div>
-                <p className="eyebrow">Tách biệt khỏi người giữ vai</p>
-                <h2>Mục tiêu hành động hợp lệ</h2>
-              </div>
-              <span>{targetIds.length} người</span>
-            </div>
-            {targetIds.length > 0 ? (
-              <div className="offline-action-targets" aria-label="Mục tiêu hành động hợp lệ">
-                {targetIds.map((playerId) => {
-                  const player = playerById.get(playerId)
-                  return player ? (
-                    <div key={player.id}>
-                      <span>#{player.seat}</span>
-                      <strong>{player.alias}</strong>
-                    </div>
-                  ) : null
-                })}
-              </div>
-            ) : (
-              <p className="hint">
-                Vai này dùng checkpoint riêng hoặc chưa có target trực tiếp.
-              </p>
-            )}
-          </>
-        )}
-
-        {state.blockingError && (
-          <p className="inline-error" role="alert">
-            {state.blockingError}
-          </p>
-        )}
-        <button
-          className="button primary offline-primary-action"
-          onClick={() => dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })}
-        >
-          {noAction ? '[ĐÃ GỌI — ĐI NGỦ]' : '[ĐÃ GỌI — CHUYỂN VAI KẾ TIẾP]'}
-        </button>
-      </section>
-    </main>
-  )
-}
-
-function NightOneReady({
-  state,
-  dispatch,
-}: {
-  state: OfflineSessionState
-  dispatch: (command: OfflineSessionCommand) => void
-}) {
-  const players = getOfflinePlayers(state)
-  const roleByPlayerId = new Map(
-    state.roleAssignments.map((assignment) => [
-      assignment.playerId,
-      assignment.roleId,
-    ]),
-  )
-  return (
-    <main className="offline-layout offline-ready-layout">
-      <header className="offline-heading">
-        <div>
-          <p className="eyebrow">Đêm 1 · Khám phá hoàn tất</p>
-          <h1>Đã xác định đủ vai</h1>
-          <p>Dân Làng còn lại đã được gán tự động đúng theo bộ bài.</p>
-        </div>
-        <span className="offline-phase-pill complete">SẴN SÀNG MS-O2</span>
-      </header>
-      <section className="panel offline-final-roster">
-        <div className="section-title">
-          <h2>Danh sách Quản trò</h2>
-          <span>{state.roleAssignments.length} / {state.seatCount}</span>
-        </div>
-        <div className="offline-assignment-list">
-          {players.map((player) => {
-            const roleId = roleByPlayerId.get(player.id)
-            return (
-              <div key={player.id}>
-                <span>#{player.seat}</span>
-                <strong>{player.alias}</strong>
-                <small>{roleId ? classicRoleById[roleId].displayName : 'Chưa gán'}</small>
-              </div>
-            )
-          })}
-        </div>
-        {state.blockingError && (
-          <p className="inline-error" role="alert">
-            {state.blockingError}
-          </p>
-        )}
-        <button
-          className="button primary offline-primary-action"
-          onClick={() => dispatch({ type: 'BEGIN_OFFLINE_MATCH' })}
-        >
-          Bắt đầu hành động Đêm 1
-        </button>
-      </section>
     </main>
   )
 }
@@ -614,12 +403,6 @@ export function OfflineModeratorView() {
       )}
       {state.phase === 'PHYSICAL_DEAL' && (
         <PhysicalDeal state={state} dispatch={dispatch} />
-      )}
-      {state.phase === 'NIGHT_1_DISCOVERY' && (
-        <NightOneDiscovery state={state} dispatch={dispatch} />
-      )}
-      {state.phase === 'NIGHT_1_READY' && (
-        <NightOneReady state={state} dispatch={dispatch} />
       )}
       {(state.phase === 'MATCH' || state.phase === 'FINISHED') && (
         <OfflineMatchView

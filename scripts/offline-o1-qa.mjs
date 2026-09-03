@@ -15,7 +15,7 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
-const offlineKey = 'masoi.offline-moderator.session.v4'
+const offlineKey = 'masoi.offline-moderator.session.v5'
 const onlineKey = 'masoi.ms0b.rooms.v1'
 const mobileViewports = [
   { width: 320, height: 568 },
@@ -26,6 +26,16 @@ const mobileViewports = [
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+async function clickByText(page, selector, expected) {
+  const clicked = await page.$$eval(selector, (nodes, text) => {
+    const node = nodes.find((entry) => entry.textContent?.includes(text))
+    if (!(node instanceof HTMLElement)) return false
+    node.click()
+    return true
+  }, expected)
+  invariant(clicked, `Không tìm thấy ${selector} có text ${expected}.`)
 }
 
 const server = await createServer({
@@ -145,6 +155,8 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-checkpoint-layout')
   await page.click('.offline-primary-action')
+  await page.waitForSelector('.offline-next-call')
+  await page.click('.offline-next-call .button.primary')
   await page.waitForSelector('.offline-holder-selector')
   invariant(
     (await page.$$('.offline-holder-selector button')).length === 7,
@@ -153,18 +165,21 @@ try {
   await inspectMobileViewports(page, 'wolf-holder')
   await page.click('.offline-holder-selector button:nth-child(1)')
   await page.click('.offline-holder-selector button:nth-child(2)')
-  await page.click('.offline-holder-panel .offline-primary-action')
-  await page.waitForSelector('.offline-action-handoff')
+  await page.click('.offline-holder-panel .button.primary')
+  await page.waitForSelector('.offline-action-card')
   let targets = await page.$$eval(
-    '.offline-action-targets strong',
+    '.offline-match-targets strong',
     (nodes) => nodes.map((node) => node.textContent?.trim()),
   )
   invariant(!targets.includes('Người 1') && !targets.includes('Người 2'), 'Wolf được target chính Wolf.')
   await inspectMobileViewports(page, 'wolf-role-action')
 
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('.offline-action-handoff')
-  await page.click('.offline-action-handoff .offline-primary-action')
+  await page.waitForSelector('.offline-action-card')
+  await clickByText(page, '.offline-match-targets button', 'Người 4')
+  await page.click('.offline-action-card > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
+  await page.click('.offline-next-call .button.primary')
   await page.waitForSelector('.offline-holder-selector')
   const laterHolders = await page.$$eval(
     '.offline-holder-selector strong',
@@ -173,16 +188,17 @@ try {
   invariant(!laterHolders.includes('Người 1') && !laterHolders.includes('Người 2'), 'Holder đã gán vẫn xuất hiện.')
   invariant(laterHolders.length === 5, 'Holder selector sau Wolf phải còn 5 người.')
   await page.click('.offline-holder-selector button:nth-child(1)')
-  await page.click('.offline-holder-panel .offline-primary-action')
-  await page.waitForSelector('.offline-action-handoff')
+  await page.click('.offline-holder-panel .button.primary')
+  await page.waitForSelector('.offline-action-card')
   targets = await page.$$eval(
-    '.offline-action-targets strong',
+    '.offline-match-targets strong',
     (nodes) => nodes.map((node) => node.textContent?.trim()),
   )
   invariant(targets.includes('Người 1'), 'Holder đã gán bị loại sai khỏi action target.')
   invariant(!targets.includes('Người 3'), 'Tiên Tri được target chính mình.')
-  await page.click('.offline-action-handoff .offline-primary-action')
-  await page.waitForSelector('.offline-ready-layout')
+  await clickByText(page, '.offline-match-targets button', 'Người 1')
+  await page.click('.offline-action-card > .button.primary')
+  await page.waitForSelector('.offline-seer-result')
   const completed = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), offlineKey)
   invariant(completed.roleAssignments.length === 7, 'Không gán đủ 7 vai.')
   invariant(
@@ -193,7 +209,7 @@ try {
     new Set(completed.roleAssignments.map((entry) => entry.playerId)).size === 7,
     'Có duplicate holder.',
   )
-  await inspectMobileViewports(page, 'night-one-ready')
+  await inspectMobileViewports(page, 'seer-result')
 
   await page.evaluate((key) => localStorage.removeItem(key), offlineKey)
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -210,29 +226,38 @@ try {
     localStorage.setItem(
       key,
       JSON.stringify({
-        schemaVersion: 4,
+        schemaVersion: 5,
         mode: 'OFFLINE_MODERATOR',
-        phase: 'NIGHT_1_DISCOVERY',
+        phase: 'PHYSICAL_DEAL',
         seatCount: 7,
         playerNames: Array.from({ length: 7 }, (_, index) => `Người ${index + 1}`),
-        roleComposition: { villager: 6, mayor: 1 },
-        roleAssignments: [{ playerId: 'offline-player-1', roleId: 'mayor' }],
+        roleComposition: { villager: 4, werewolf: 2, mayor: 1 },
+        roleAssignments: [
+          { playerId: 'offline-player-1', roleId: 'werewolf' },
+          { playerId: 'offline-player-2', roleId: 'werewolf' },
+          { playerId: 'offline-player-3', roleId: 'mayor' },
+          ...Array.from({ length: 4 }, (_, index) => ({
+            playerId: `offline-player-${index + 4}`,
+            roleId: 'villager',
+          })),
+        ],
         offlineEvents: [{
           id: 'offline-role-discovery-mayor-1',
           type: 'ROLE_IDENTITY_DISCOVERED',
           occurredAt: 1,
           roleId: 'mayor',
-          holderPlayerIds: ['offline-player-1'],
+          holderPlayerIds: ['offline-player-3'],
         }],
-        nightOne: {
-          callPlan: ['mayor'],
+        nightRitual: {
+          callPlan: ['werewolf', 'mayor'],
           callIndex: 0,
-          activeStep: { kind: 'ROLE_ACTION', roleId: 'mayor', actionType: 'NONE' },
-          draftHolderIds: [],
+          activeStep: null,
+          draftHolderIdsByRole: {},
         },
         authority: null,
         authorityInput: {
           cupidTargetIds: [],
+          nightTargetDraft: { kind: 'UNSET' },
           witchResurrectionTargetId: null,
           witchPoisonTargetId: null,
           dayDecision: {
@@ -246,20 +271,27 @@ try {
     )
   }, offlineKey)
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('.offline-no-action')
+  await page.waitForSelector('.offline-checkpoint-layout')
+  await page.click('.offline-primary-action')
+  await page.click('.offline-next-call .button.primary')
+  await clickByText(page, '.offline-match-targets button', 'Người 4')
+  await page.click('.offline-action-card > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
+  await page.click('.offline-next-call .button.primary')
+  await page.waitForSelector('.offline-active-call')
   const ritualLabel = await page.$eval(
-    '.offline-action-handoff .offline-primary-action',
+    '.offline-active-call .button.primary',
     (button) => button.textContent?.trim(),
   )
   invariant(ritualLabel === '[ĐÃ GỌI — ĐI NGỦ]', 'No-action ritual sai nhãn.')
-  await page.click('.offline-action-handoff .offline-primary-action')
-  await page.waitForSelector('.offline-ready-layout')
+  await page.click('.offline-active-call .button.primary')
+  await page.waitForSelector('.offline-night-finalize')
   const noActionComplete = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)),
     offlineKey,
   )
   invariant(
-    noActionComplete.roleAssignments.filter((entry) => entry.roleId === 'villager').length === 6,
+    noActionComplete.roleAssignments.filter((entry) => entry.roleId === 'villager').length === 4,
     'No-action ritual không hoàn tất đúng Villager invariant.',
   )
 

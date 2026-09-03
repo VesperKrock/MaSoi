@@ -15,6 +15,7 @@ const candidates = [
 const executablePath = candidates.find((candidate) => fs.existsSync(candidate))
 if (!executablePath) throw new Error('Không tìm thấy Chrome/Edge. Đặt CHROME_PATH.')
 
+const offlineV5Key = 'masoi.offline-moderator.session.v5'
 const offlineV4Key = 'masoi.offline-moderator.session.v4'
 const offlineV2Key = 'masoi.offline-moderator.session.v2'
 const onlineKey = 'masoi.ms0b.rooms.v1'
@@ -193,13 +194,13 @@ try {
   )
   await inspectViewports(page, 'landing-active-resume')
   await clickByText(page, '.offline-entry-action', 'TIẾP TỤC')
-  await page.waitForSelector('.offline-final-roster')
-  await page.waitForFunction((key) => localStorage.getItem(key), {}, offlineV4Key)
+  await page.waitForSelector('.offline-checkpoint-layout')
+  await page.waitForFunction((key) => localStorage.getItem(key), {}, offlineV5Key)
   const migrated = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)),
-    offlineV4Key,
+    offlineV5Key,
   )
-  invariant(migrated.schemaVersion === 4, 'Không migrate v2 → v4.')
+  invariant(migrated.schemaVersion === 5, 'Không migrate v2 → v5.')
   invariant(migrated.offlineEvents.length === 4, 'Migration mất role-discovery truth.')
   invariant(
     migrated.offlineEvents.find((event) => event.roleId === 'werewolf')
@@ -207,14 +208,20 @@ try {
     'Migration sai holder Ma Sói.',
   )
 
-  await page.click('.offline-final-roster .offline-primary-action')
+  await page.click('.offline-checkpoint-layout .offline-primary-action')
   await page.click('.offline-next-call .button.primary')
   await clickByText(page, '.offline-match-targets button', 'Người 5')
+  await page.click('.offline-action-card > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.click('.offline-next-call .button.primary')
   await clickByText(page, '.offline-match-targets button', 'Người 1')
+  await page.click('.offline-action-card > .button.primary')
   await page.click('.offline-seer-result .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.click('.offline-next-call .button.primary')
   await clickByText(page, '.offline-match-targets button', 'Người 6')
+  await page.click('.offline-action-card > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.click('.offline-next-call .button.primary')
   await clickByText(
     page,
@@ -222,6 +229,7 @@ try {
     'Người 5',
   )
   await page.click('.offline-witch-action > .button.primary')
+  await page.click('.offline-call-complete .button.primary')
   await page.click('.offline-night-finalize .button.primary')
   await page.waitForSelector('.offline-morning-checkpoint')
 
@@ -247,12 +255,12 @@ try {
   invariant(!firstJournalText.includes('ĐI NGỦ'), 'Journal ghi ritual wake/sleep.')
   await inspectViewports(page, 'offline-journal')
   const journalLineCount = await page.$$('.moderator-journal-section li')
-  const beforeReload = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
+  const beforeReload = await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-morning-checkpoint')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === beforeReload,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)) === beforeReload,
     'Reload làm đổi hoặc replay authoritative snapshot.',
   )
   await page.click('.offline-session-tools .button')
@@ -271,7 +279,7 @@ try {
   invariant(!dayJournal.includes('Phiếu của'), 'Journal lộ phiếu từng người.')
   await page.click('.moderator-journal-heading .button')
 
-  const activeSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
+  const activeSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)
   await page.click('.topbar nav > a')
   await page.waitForSelector('.entry-actions')
   invariant(
@@ -281,24 +289,24 @@ try {
   await clickByText(page, '.offline-entry-action', 'TIẾP TỤC')
   await page.waitForSelector('.offline-day-result')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === activeSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)) === activeSnapshot,
     'Resume active làm thay đổi snapshot.',
   )
 
   const villagerState = readyState(Array.from({ length: 7 }, () => 'villager'))
-  await page.evaluate(
-    ({ key, state }) => localStorage.setItem(key, JSON.stringify(state)),
-    { key: offlineV4Key, state: villagerState },
-  )
+  await page.evaluate(({ currentKey, legacyKey, state }) => {
+    localStorage.removeItem(currentKey)
+    localStorage.setItem(legacyKey, JSON.stringify(state))
+  }, { currentKey: offlineV5Key, legacyKey: offlineV4Key, state: villagerState })
   await page.goto(`${origin}/?screen=offline`, { waitUntil: 'domcontentloaded' })
-  await page.click('.offline-final-roster .offline-primary-action')
+  await page.click('.offline-checkpoint-layout .offline-primary-action')
   await page.waitForSelector('.moderator-end-match')
   invariant(
     !(await page.evaluate(() => document.body.textContent?.includes('Chơi lại'))),
     'FINISHED hiển thị Play Again.',
   )
   await inspectViewports(page, 'offline-finished')
-  const finishedSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)
+  const finishedSnapshot = await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)
   await clickByText(page, '.moderator-end-actions a', 'Về trang chủ')
   await page.waitForSelector('.offline-entry-state')
   const finishedLanding = await page.$eval('.offline-entry-state', (node) => node.textContent)
@@ -310,7 +318,7 @@ try {
   await clickByText(page, '.offline-entry-action', 'XEM VÁN')
   await page.waitForSelector('.moderator-end-match')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === finishedSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)) === finishedSnapshot,
     'Resume FINISHED làm replay outcome.',
   )
 
@@ -319,22 +327,22 @@ try {
   await clickByText(page, '.offline-entry-state a', 'Bắt đầu ván Offline mới')
   await page.waitForSelector('.offline-replacement-layout')
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === finishedSnapshot,
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)) === finishedSnapshot,
     'Mở New intent đã âm thầm ghi đè ván cũ.',
   )
   await inspectViewports(page, 'offline-destructive-confirmation')
   await clickByText(page, '.offline-replacement-actions button', 'Xóa và bắt đầu mới')
   await page.waitForSelector('.offline-setup-layout')
-  const replacement = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), offlineV4Key)
+  const replacement = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), offlineV5Key)
   invariant(
-    replacement.schemaVersion === 4 &&
+    replacement.schemaVersion === 5 &&
       replacement.phase === 'SETUP' &&
       replacement.authority === null &&
       replacement.offlineEvents.length === 0,
-    'Destructive confirmation không tạo session v4 sạch.',
+    'Destructive confirmation không tạo session v5 sạch.',
   )
 
-  await page.evaluate((key) => localStorage.setItem(key, '{bad json'), offlineV4Key)
+  await page.evaluate((key) => localStorage.setItem(key, '{bad json'), offlineV5Key)
   await page.goto(`${origin}/?screen=offline`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.offline-replacement-layout')
   invariant(
@@ -342,7 +350,7 @@ try {
     'Corrupt snapshot không fail-safe.',
   )
   invariant(
-    (await page.evaluate((key) => localStorage.getItem(key), offlineV4Key)) === '{bad json',
+    (await page.evaluate((key) => localStorage.getItem(key), offlineV5Key)) === '{bad json',
     'Corrupt snapshot bị tự động ghi đè.',
   )
 
@@ -355,7 +363,7 @@ try {
 
   console.log('PASS typed Offline Journal role truth + meaningful chronology + Witch rescue truth')
   console.log('PASS Moderator Day outcome only + no ritual/voter-choice disclosure')
-  console.log('PASS v2→v4 migration + exact reload/resume + duplicate-free Journal')
+  console.log('PASS v2→v5 migration + exact reload/resume + duplicate-free Journal')
   console.log('PASS active/finished resume + explicit destructive new-session confirmation')
   console.log('PASS corrupt snapshot fail-safe + Online storage isolation + no Supabase')
   console.log('PASS Moderator mobile 320/360/390/430px + no overflow/artwork + >=44px controls')

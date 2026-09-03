@@ -10,7 +10,6 @@ import {
   reduceOfflineSession,
   validateOfflineSetup,
   type OfflineSessionCommand,
-  type OfflineSessionState,
 } from './offline-session'
 
 function commandRunner(initial = createOfflineSessionState(1)) {
@@ -112,179 +111,162 @@ describe('MS-O1 offline setup', () => {
     expect(runner.state.phase).toBe('PHYSICAL_DEAL')
     expect(runner.state.playerNames[0]).toBe('Người 1')
     expect(runner.state.roleAssignments).toEqual([])
-    expect(runner.state.nightOne.callPlan).toEqual(['werewolf', 'seer'])
+    expect(runner.state.nightRitual.callPlan).toEqual(['werewolf', 'seer'])
   })
 })
 
-describe('MS-O1 Night-1 role discovery', () => {
-  it('calls every configured non-Villager once, including no-action roles', () => {
-    const composition = Object.fromEntries(
-      classicRoleCatalog.map((role) => [
-        role.id,
-        role.id === 'villager' ? 5 : 1,
-      ]),
-    ) as RoleComposition
-    const plan = getOfflineNightOneCallPlan(composition)
-    expect(plan).toHaveLength(11)
-    expect(new Set(plan).size).toBe(11)
-    expect(plan).not.toContain('villager')
-    for (const role of classicRoleCatalog.filter(
-      (entry) => entry.id !== 'villager',
-    )) {
-      expect(plan).toContain(role.id)
-    }
-    expect(plan).toEqual(
-      expect.arrayContaining(['mayor', 'traitor', 'fool', 'half-wolf']),
-    )
-  })
-
-  it('requires exactly two Wolf holders and removes them from later holder selectors', () => {
+describe('MS-HF4 interleaved Night-1 rituals', () => {
+  function startDefaultNight() {
     const runner = commandRunner()
     fillNames(runner, 7)
     runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
-    runner.dispatch({ type: 'BEGIN_NIGHT_ONE_DISCOVERY' })
-    expect(runner.state.nightOne.activeStep).toMatchObject({
+    runner.dispatch({ type: 'BEGIN_OFFLINE_MATCH' })
+    return runner
+  }
+
+  function selectHolder(
+    runner: ReturnType<typeof commandRunner>,
+    roleId: 'werewolf' | 'traitor' | 'seer',
+    playerId: string,
+  ) {
+    runner.dispatch({ type: 'TOGGLE_HOLDER', roleId, playerId })
+  }
+
+  it('groups Traitor with the Wolf call and starts Night 1 before any holder is known', () => {
+    const composition = Object.fromEntries(
+      classicRoleCatalog.map((role) => [
+        role.id,
+        role.id === 'villager' ? 1 : 1,
+      ]),
+    ) as RoleComposition
+    const plan = getOfflineNightOneCallPlan(composition)
+    expect(plan).not.toContain('traitor')
+    expect(plan[0]).toBe('cupid')
+    expect(plan.indexOf('werewolf')).toBeLessThan(plan.indexOf('seer'))
+
+    const runner = startDefaultNight()
+    expect(runner.state.phase).toBe('MATCH')
+    expect(runner.state.roleAssignments).toEqual([])
+    expect(runner.state.authority?.phase).toBe('NIGHT')
+    expect(runner.state.authority?.night?.activeRoleId).toBeNull()
+  })
+
+  it('discovers the exact Wolf group then opens one immediate shared attack', () => {
+    const runner = commandRunner()
+    fillNames(runner, 7)
+    setComposition(runner, {
+      villager: 3,
+      werewolf: 2,
+      traitor: 1,
+      seer: 1,
+    })
+    runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
+    runner.dispatch({ type: 'BEGIN_OFFLINE_MATCH' })
+    runner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    expect(runner.state.nightRitual.activeStep).toEqual({
       kind: 'HOLDER_DISCOVERY',
       roleId: 'werewolf',
-      requiredHolderCount: 2,
     })
 
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-1' })
+    selectHolder(runner, 'werewolf', 'offline-player-1')
+    selectHolder(runner, 'traitor', 'offline-player-3')
     runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    expect(runner.state.roleAssignments).toEqual([])
     expect(runner.state.blockingError).toContain('đúng 2')
-
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-2' })
+    selectHolder(runner, 'werewolf', 'offline-player-2')
     runner.dispatch({ type: 'CONFIRM_HOLDERS' })
+
     expect(getOfflineRoleHolderIds(runner.state, 'werewolf')).toEqual([
       'offline-player-1',
       'offline-player-2',
     ])
-    expect(runner.state.offlineEvents).toMatchObject([{
-      type: 'ROLE_IDENTITY_DISCOVERED',
-      roleId: 'werewolf',
-      holderPlayerIds: ['offline-player-1', 'offline-player-2'],
-    }])
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    expect(runner.state.offlineEvents).toHaveLength(1)
-    expect(runner.state.nightOne.activeStep).toMatchObject({
-      kind: 'ROLE_ACTION',
-      roleId: 'werewolf',
-      actionType: 'WOLF_VOTE',
-    })
-    expect(getOfflineEligibleActionTargetIds(runner.state)).not.toContain(
-      'offline-player-1',
-    )
-
-    runner.dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })
-    expect(getUnassignedOfflinePlayerIds(runner.state)).not.toContain(
-      'offline-player-1',
-    )
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-1' })
-    expect(runner.state.nightOne.draftHolderIds).toEqual([])
-  })
-
-  it('keeps assigned holders in action targets whenever shared target rules permit', () => {
-    const runner = commandRunner()
-    fillNames(runner, 7)
-    runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
-    runner.dispatch({ type: 'BEGIN_NIGHT_ONE_DISCOVERY' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-1' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-2' })
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    runner.dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-3' })
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-
-    expect(runner.state.nightOne.activeStep).toMatchObject({
-      kind: 'ROLE_ACTION',
-      roleId: 'seer',
-      actionType: 'SELECT_TARGET',
-    })
-    expect(getOfflineEligibleActionTargetIds(runner.state)).toContain(
-      'offline-player-1',
-    )
-    expect(getOfflineEligibleActionTargetIds(runner.state)).not.toContain(
+    expect(getOfflineRoleHolderIds(runner.state, 'traitor')).toEqual([
       'offline-player-3',
-    )
-  })
-
-  it('auto-assigns the exact remaining Villager count after singleton discovery', () => {
-    const runner = commandRunner()
-    fillNames(runner, 7)
-    runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
-    runner.dispatch({ type: 'BEGIN_NIGHT_ONE_DISCOVERY' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-1' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-2' })
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    runner.dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-3' })
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    runner.dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })
-
-    expect(runner.state.phase).toBe('NIGHT_1_READY')
-    expect(getOfflineRoleHolderIds(runner.state, 'villager')).toHaveLength(4)
-    expect(runner.state.offlineEvents.flatMap((event) =>
-      event.type === 'ROLE_IDENTITY_DISCOVERED' ? [event.roleId] : [],
-    )).toEqual([
-      'werewolf',
-      'seer',
     ])
-    expect(runner.state.roleAssignments).toHaveLength(7)
-    expect(new Set(runner.state.roleAssignments.map((entry) => entry.playerId)).size).toBe(7)
+    const wolfAction = runner.state.authority?.night?.actionsByRole.werewolf
+    expect(wolfAction?.kind).toBe('WOLF_VOTE')
+    expect(wolfAction?.eligibleActorIds).toEqual([
+      'offline-player-1',
+      'offline-player-2',
+      'offline-player-3',
+    ])
+    expect(wolfAction?.eligibleTargetIds).toContain('offline-player-4')
+    expect(getOfflineRoleHolderIds(runner.state, 'villager')).toEqual([])
+
+    runner.dispatch({
+      type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT',
+      targetId: 'offline-player-4',
+    })
+    expect(runner.state.authorityInput.nightTargetDraft).toEqual({
+      kind: 'PLAYER',
+      playerId: 'offline-player-4',
+    })
+    runner.dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    expect(runner.state.nightRitual.activeStep).toEqual({
+      kind: 'CALL_COMPLETE',
+      roleId: 'werewolf',
+    })
+    expect(runner.state.authority?.night?.actionsByRole.werewolf?.result)
+      .toMatchObject({ targetId: 'offline-player-4' })
   })
 
-  it('represents a no-action role as a typed ritual step', () => {
+  it('discovers Seer after Wolves and classifies an UNKNOWN-role target immediately', () => {
     const runner = commandRunner()
     fillNames(runner, 7)
-    setComposition(runner, { villager: 6, mayor: 1 })
-    runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
-    runner.dispatch({ type: 'BEGIN_NIGHT_ONE_DISCOVERY' })
-    runner.dispatch({ type: 'TOGGLE_HOLDER', playerId: 'offline-player-1' })
-    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
-    expect(runner.state.nightOne.activeStep).toEqual({
-      kind: 'ROLE_ACTION',
-      roleId: 'mayor',
-      actionType: 'NONE',
+    setComposition(runner, {
+      villager: 3,
+      werewolf: 2,
+      seer: 1,
+      protector: 1,
     })
-    runner.dispatch({ type: 'ADVANCE_FROM_ROLE_ACTION' })
-    expect(runner.state.phase).toBe('NIGHT_1_READY')
-    expect(getOfflineRoleHolderIds(runner.state, 'villager')).toHaveLength(6)
+    runner.dispatch({ type: 'CONTINUE_TO_PHYSICAL_DEAL' })
+    runner.dispatch({ type: 'BEGIN_OFFLINE_MATCH' })
+    runner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    selectHolder(runner, 'werewolf', 'offline-player-1')
+    selectHolder(runner, 'werewolf', 'offline-player-2')
+    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
+    runner.dispatch({
+      type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT',
+      targetId: 'offline-player-4',
+    })
+    runner.dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    runner.dispatch({ type: 'ADVANCE_FROM_COMPLETED_RITUAL' })
+    runner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    selectHolder(runner, 'seer', 'offline-player-3')
+    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
+
+    expect(getUnassignedOfflinePlayerIds(runner.state)).toContain('offline-player-4')
+    expect(getOfflineEligibleActionTargetIds(runner.state)).toContain('offline-player-4')
+    runner.dispatch({
+      type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT',
+      targetId: 'offline-player-4',
+    })
+    runner.dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    expect(runner.state.authority?.night?.actionsByRole.seer?.seer).toMatchObject({
+      targetId: 'offline-player-4',
+      result: 'NON_WOLF',
+      acknowledged: false,
+    })
+    runner.dispatch({ type: 'ACKNOWLEDGE_OFFLINE_SEER_RESULT' })
+    expect(runner.state.nightRitual.activeStep?.kind).toBe('CALL_COMPLETE')
   })
 
-  it('blocks completion when the remaining Villager invariant is broken', () => {
-    const state: OfflineSessionState = {
-      ...createOfflineSessionState(1),
-      phase: 'NIGHT_1_DISCOVERY',
-      playerNames: Array.from({ length: 7 }, (_, index) => `Người ${index + 1}`),
-      roleComposition: { villager: 5, werewolf: 2 },
-      roleAssignments: [
-        { playerId: 'offline-player-1', roleId: 'werewolf' },
-        { playerId: 'offline-player-2', roleId: 'werewolf' },
-      ],
-      nightOne: {
-        callPlan: ['werewolf'],
-        callIndex: 0,
-        activeStep: {
-          kind: 'ROLE_ACTION',
-          roleId: 'werewolf',
-          actionType: 'WOLF_VOTE',
-        },
-        draftHolderIds: [],
-      },
-      blockingError: null,
-    }
-    const broken = {
-      ...state,
-      roleComposition: { villager: 4, werewolf: 2 },
-    }
-    const next = reduceOfflineSession(
-      broken,
-      { type: 'ADVANCE_FROM_ROLE_ACTION' },
-      2,
-    )
-    expect(next.phase).toBe('NIGHT_1_DISCOVERY')
-    expect(next.blockingError).toContain('cần đúng 4 Dân Làng')
-    expect(getOfflineRoleHolderIds(next, 'villager')).toEqual([])
+  it('auto-assigns Villagers only when the final non-Villager is discovered', () => {
+    const runner = startDefaultNight()
+    runner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    selectHolder(runner, 'werewolf', 'offline-player-1')
+    selectHolder(runner, 'werewolf', 'offline-player-2')
+    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
+    expect(getOfflineRoleHolderIds(runner.state, 'villager')).toHaveLength(0)
+    runner.dispatch({
+      type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT',
+      targetId: 'offline-player-4',
+    })
+    runner.dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })
+    runner.dispatch({ type: 'ADVANCE_FROM_COMPLETED_RITUAL' })
+    runner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
+    selectHolder(runner, 'seer', 'offline-player-3')
+    runner.dispatch({ type: 'CONFIRM_HOLDERS' })
+    expect(getOfflineRoleHolderIds(runner.state, 'villager')).toHaveLength(4)
+    expect(runner.state.roleAssignments).toHaveLength(7)
   })
 })

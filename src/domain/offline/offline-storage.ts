@@ -1,14 +1,17 @@
 import { classicRoleById, type RoleId } from '../roles/classic-catalog'
 import { createOfflineAuthorityInput } from './offline-authority'
 import {
+  getOfflineNightOneCallPlan,
   offlineSessionSchemaVersion,
-  type OfflineNightOneStep,
+  type OfflineNightRitualStep,
   type OfflinePhase,
   type OfflineSessionEvent,
   type OfflineSessionState,
 } from './offline-session'
 
 export const offlineSessionStorageKey =
+  'masoi.offline-moderator.session.v5' as const
+export const offlineSessionV4StorageKey =
   'masoi.offline-moderator.session.v4' as const
 export const offlineSessionV3StorageKey =
   'masoi.offline-moderator.session.v3' as const
@@ -19,6 +22,7 @@ export const legacyOfflineSessionStorageKey =
 
 const offlineStorageKeys = [
   offlineSessionStorageKey,
+  offlineSessionV4StorageKey,
   offlineSessionV3StorageKey,
   offlineSessionV2StorageKey,
   legacyOfflineSessionStorageKey,
@@ -39,7 +43,7 @@ export type OfflineSessionStorageStatus =
 export interface OfflineSessionInspection {
   status: OfflineSessionStorageStatus
   state: OfflineSessionState | null
-  sourceVersion?: 1 | 2 | 3 | 4
+  sourceVersion?: 1 | 2 | 3 | 4 | 5
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,8 +58,6 @@ function isPhase(value: unknown): value is OfflinePhase {
   return (
     value === 'SETUP' ||
     value === 'PHYSICAL_DEAL' ||
-    value === 'NIGHT_1_DISCOVERY' ||
-    value === 'NIGHT_1_READY' ||
     value === 'MATCH' ||
     value === 'FINISHED'
   )
@@ -214,6 +216,11 @@ function isAuthorityInput(value: unknown): boolean {
     isRecord(value) &&
     Array.isArray(value.cupidTargetIds) &&
     value.cupidTargetIds.every((playerId) => typeof playerId === 'string') &&
+    isRecord(value.nightTargetDraft) &&
+    (value.nightTargetDraft.kind === 'UNSET' ||
+      value.nightTargetDraft.kind === 'NOBODY' ||
+      (value.nightTargetDraft.kind === 'PLAYER' &&
+        typeof value.nightTargetDraft.playerId === 'string')) &&
     (value.witchResurrectionTargetId === null ||
       typeof value.witchResurrectionTargetId === 'string') &&
     (value.witchPoisonTargetId === null ||
@@ -242,15 +249,11 @@ function isDayDecision(value: unknown): boolean {
     (value.verdict === 'SPARE' || value.verdict === 'EXECUTE')
 }
 
-function isNightStep(value: unknown): value is OfflineNightOneStep | null {
+function isNightStep(value: unknown): value is OfflineNightRitualStep | null {
   if (value === null) return true
   if (!isRecord(value) || !isRoleId(value.roleId)) return false
   if (value.kind === 'HOLDER_DISCOVERY') {
-    return (
-      typeof value.requiredHolderCount === 'number' &&
-      Number.isInteger(value.requiredHolderCount) &&
-      value.requiredHolderCount > 0
-    )
+    return true
   }
   if (value.kind === 'ROLE_ACTION') {
     return (
@@ -263,6 +266,7 @@ function isNightStep(value: unknown): value is OfflineNightOneStep | null {
       value.actionType === 'NONE'
     )
   }
+  if (value.kind === 'CALL_COMPLETE') return true
   return false
 }
 
@@ -307,7 +311,7 @@ export function isOfflineSessionState(
     !Array.isArray(value.roleAssignments) ||
     !Array.isArray(value.offlineEvents) ||
     !value.offlineEvents.every(isOfflineEvent) ||
-    !isRecord(value.nightOne) ||
+    !isRecord(value.nightRitual) ||
     !isAuthorityState(value.authority) ||
     !isAuthorityInput(value.authorityInput) ||
     (value.blockingError !== null && typeof value.blockingError !== 'string') ||
@@ -337,15 +341,18 @@ export function isOfflineSessionState(
     return false
   }
   return (
-    Array.isArray(value.nightOne.callPlan) &&
-    value.nightOne.callPlan.every(isRoleId) &&
-    typeof value.nightOne.callIndex === 'number' &&
-    Number.isInteger(value.nightOne.callIndex) &&
-    value.nightOne.callIndex >= 0 &&
-    isNightStep(value.nightOne.activeStep) &&
-    Array.isArray(value.nightOne.draftHolderIds) &&
-    value.nightOne.draftHolderIds.every(
-      (playerId) => typeof playerId === 'string',
+    Array.isArray(value.nightRitual.callPlan) &&
+    value.nightRitual.callPlan.every(isRoleId) &&
+    typeof value.nightRitual.callIndex === 'number' &&
+    Number.isInteger(value.nightRitual.callIndex) &&
+    value.nightRitual.callIndex >= 0 &&
+    isNightStep(value.nightRitual.activeStep) &&
+    isRecord(value.nightRitual.draftHolderIdsByRole) &&
+    Object.entries(value.nightRitual.draftHolderIdsByRole).every(
+      ([roleId, playerIds]) =>
+        isRoleId(roleId) &&
+        Array.isArray(playerIds) &&
+        playerIds.every((playerId) => typeof playerId === 'string'),
     )
   )
 }
@@ -389,13 +396,24 @@ const obsoleteOfflineDayJournalTypes = new Set([
   'HANGING_RESULT',
 ])
 
-function migrateAuthorityInput(value: unknown) {
+function migrateAuthorityInput(
+  value: unknown,
+  preserveDayDecision = false,
+) {
   const fresh = createOfflineAuthorityInput()
   if (!isRecord(value)) return fresh
   return {
     cupidTargetIds: Array.isArray(value.cupidTargetIds)
       ? value.cupidTargetIds
       : fresh.cupidTargetIds,
+    nightTargetDraft:
+      isRecord(value.nightTargetDraft) &&
+      (value.nightTargetDraft.kind === 'UNSET' ||
+        value.nightTargetDraft.kind === 'NOBODY' ||
+        (value.nightTargetDraft.kind === 'PLAYER' &&
+          typeof value.nightTargetDraft.playerId === 'string'))
+        ? value.nightTargetDraft
+        : fresh.nightTargetDraft,
     witchResurrectionTargetId:
       value.witchResurrectionTargetId === null ||
       typeof value.witchResurrectionTargetId === 'string'
@@ -406,7 +424,10 @@ function migrateAuthorityInput(value: unknown) {
       typeof value.witchPoisonTargetId === 'string'
         ? value.witchPoisonTargetId
         : null,
-    dayDecision: fresh.dayDecision,
+    dayDecision:
+      preserveDayDecision && isDayDecision(value.dayDecision)
+        ? value.dayDecision
+        : fresh.dayDecision,
   }
 }
 
@@ -480,6 +501,50 @@ function migrateV3Authority(
   }
 }
 
+function migrateV4OfflineSession(value: unknown): OfflineSessionState | null {
+  if (!isRecord(value) || value.schemaVersion !== 4) return null
+  const roleComposition = isRecord(value.roleComposition)
+    ? value.roleComposition
+    : {}
+  const authority = isRecord(value.authority) ? value.authority : null
+  const legacyNightOne = isRecord(value.nightOne) ? value.nightOne : null
+  const legacyPlan = legacyNightOne && Array.isArray(legacyNightOne.callPlan)
+    ? legacyNightOne.callPlan.filter(isRoleId)
+    : []
+  const authorityPlan = authority && isRecord(authority.config) &&
+    Array.isArray(authority.config.nightRoleIds)
+    ? authority.config.nightRoleIds.filter(isRoleId)
+    : []
+  const callPlan = authorityPlan.length > 0
+    ? authorityPlan
+    : getOfflineNightOneCallPlan(roleComposition)
+  const calls = authority && isRecord(authority.night) &&
+    Array.isArray(authority.night.calls)
+    ? authority.night.calls
+    : []
+  const completedCount = calls.filter(
+    (call) => isRecord(call) && call.status === 'COMPLETED',
+  ).length
+  const phase = value.phase === 'NIGHT_1_DISCOVERY' ||
+    value.phase === 'NIGHT_1_READY'
+    ? 'PHYSICAL_DEAL'
+    : value.phase
+  const migrated = {
+    ...value,
+    schemaVersion: offlineSessionSchemaVersion,
+    phase,
+    authorityInput: migrateAuthorityInput(value.authorityInput, true),
+    nightRitual: {
+      callPlan: callPlan.length > 0 ? callPlan : legacyPlan,
+      callIndex: completedCount,
+      activeStep: null,
+      draftHolderIdsByRole: {},
+    },
+  }
+  delete (migrated as Record<string, unknown>).nightOne
+  return isOfflineSessionState(migrated) ? migrated : null
+}
+
 function migrateV3OfflineSession(value: unknown): OfflineSessionState | null {
   if (!isRecord(value) || value.schemaVersion !== 3) return null
   const updatedAt = typeof value.updatedAt === 'number' ? value.updatedAt : 0
@@ -489,12 +554,12 @@ function migrateV3OfflineSession(value: unknown): OfflineSessionState | null {
     : []
   const migrated = {
     ...value,
-    schemaVersion: offlineSessionSchemaVersion,
+    schemaVersion: 4,
     authority: authorityMigration.authority,
     authorityInput: migrateAuthorityInput(value.authorityInput),
     offlineEvents: [...existingEvents, ...authorityMigration.events],
   }
-  return isOfflineSessionState(migrated) ? migrated : null
+  return migrateV4OfflineSession(migrated)
 }
 
 function migrateV2OfflineSession(value: unknown): OfflineSessionState | null {
@@ -518,12 +583,13 @@ function migrateV1OfflineSession(value: unknown): OfflineSessionState | null {
 
 function parseStoredSession(
   serialized: string,
-  sourceVersion: 1 | 2 | 3 | 4,
+  sourceVersion: 1 | 2 | 3 | 4 | 5,
 ): OfflineSessionState | null {
   const parsed: unknown = JSON.parse(serialized)
-  if (sourceVersion === 4) {
+  if (sourceVersion === 5) {
     return isOfflineSessionState(parsed) ? parsed : null
   }
+  if (sourceVersion === 4) return migrateV4OfflineSession(parsed)
   if (sourceVersion === 3) return migrateV3OfflineSession(parsed)
   return sourceVersion === 2
     ? migrateV2OfflineSession(parsed)
@@ -541,7 +607,7 @@ export function inspectOfflineSession(
       return { status: 'CORRUPT', state: null }
     }
     if (!serialized) continue
-    const sourceVersion = (4 - index) as 1 | 2 | 3 | 4
+    const sourceVersion = (5 - index) as 1 | 2 | 3 | 4 | 5
     try {
       const state = parseStoredSession(serialized, sourceVersion)
       if (!state) return { status: 'CORRUPT', state: null, sourceVersion }

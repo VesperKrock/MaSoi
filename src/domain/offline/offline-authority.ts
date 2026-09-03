@@ -15,10 +15,16 @@ import type { OfflineSessionState } from './offline-session'
 
 export interface OfflineAuthorityInput {
   cupidTargetIds: PlayerId[]
+  nightTargetDraft: OfflineNightTargetDraft
   witchResurrectionTargetId: PlayerId | null
   witchPoisonTargetId: PlayerId | null
   dayDecision: OfflineDayDecision
 }
+
+export type OfflineNightTargetDraft =
+  | { kind: 'UNSET' }
+  | { kind: 'PLAYER'; playerId: PlayerId }
+  | { kind: 'NOBODY' }
 
 export type OfflineDayVerdict = 'SPARE' | 'EXECUTE'
 
@@ -45,6 +51,8 @@ export type OfflineAuthorityCommand =
   | { type: 'BEGIN_OFFLINE_MATCH' }
   | { type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' }
   | { type: 'COMPLETE_ACTIVE_OFFLINE_RITUAL' }
+  | { type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT'; targetId: PlayerId | null }
+  | { type: 'CONFIRM_OFFLINE_NIGHT_TARGET' }
   | { type: 'SUBMIT_OFFLINE_NIGHT_TARGET'; targetId: PlayerId | null }
   | { type: 'TOGGLE_OFFLINE_CUPID_TARGET'; playerId: PlayerId }
   | { type: 'CONFIRM_OFFLINE_CUPID_PAIR' }
@@ -78,6 +86,7 @@ export type OfflineAuthorityCommand =
 export function createOfflineAuthorityInput(): OfflineAuthorityInput {
   return {
     cupidTargetIds: [],
+    nightTargetDraft: { kind: 'UNSET' },
     witchResurrectionTargetId: null,
     witchPoisonTargetId: null,
     dayDecision: {
@@ -110,7 +119,17 @@ function createAuthorityRoom(
     alias,
     alive: true,
   }))
-  const assignments = structuredClone(state.roleAssignments)
+  const knownRoles = new Map(
+    state.roleAssignments.map((assignment) => [assignment.playerId, assignment.roleId]),
+  )
+  // Shared target/action code expects one server role per player. UNKNOWN
+  // physical roles are projected as Villager until their ritual call confirms
+  // the real assignment; Offline UI and persistence keep them undiscovered.
+  const assignments = players.map((player) => ({
+    playerId: player.id,
+    roleId: knownRoles.get(player.id) ?? ('villager' as const),
+  }))
+  const allPhysicalRolesKnown = state.roleAssignments.length === state.seatCount
   return {
     schemaVersion: 2,
     roomId: 'OFFLINE-MODERATOR',
@@ -118,7 +137,7 @@ function createAuthorityRoom(
     revision: 0,
     createdAt: now,
     lifecycle: 'IN_GAME',
-    phase: 'SETUP',
+    phase: allPhysicalRolesKnown ? 'SETUP' : 'NIGHT',
     dayNumber: 1,
     players,
     roleAssignments: assignments,
@@ -129,10 +148,20 @@ function createAuthorityRoom(
       wolfPolicy: 'RANDOM_ON_TIE',
       // Offline deliberately calls every configured non-Villager. Passive
       // roles have shared NONE definitions and therefore create no action.
-      nightRoleIds: [...state.nightOne.callPlan],
+      nightRoleIds: [...state.nightRitual.callPlan],
       revoteDurationMs: 10_000,
     },
-    night: null,
+    night: allPhysicalRolesKnown
+      ? null
+      : {
+          number: 1,
+          calls: state.nightRitual.callPlan.map((roleId) => ({
+            roleId,
+            status: 'NOT_CALLED' as const,
+          })),
+          activeRoleId: null,
+          actionsByRole: {},
+        },
     nightResolution: null,
     witchResources: null,
     witchCheckpoint: null,
@@ -273,15 +302,11 @@ export function reduceOfflineAuthority(
   const environment = createEnvironment(state, now)
   try {
     if (command.type === 'BEGIN_OFFLINE_MATCH') {
-      if (state.phase !== 'NIGHT_1_READY' || state.authority) return state
-      if (state.roleAssignments.length !== state.seatCount) {
-        throw new Error('Phải xác định đủ vai trước khi bắt đầu ván.')
-      }
-      const room = applyRoomCommand(
-        createAuthorityRoom(state, now),
-        { type: 'START_NIGHT' },
-        environment,
-      )
+      if (state.phase !== 'PHYSICAL_DEAL' || state.authority) return state
+      const initialRoom = createAuthorityRoom(state, now)
+      const room = initialRoom.phase === 'SETUP'
+        ? applyRoomCommand(initialRoom, { type: 'START_NIGHT' }, environment)
+        : initialRoom
       return success(state, room, now, createOfflineAuthorityInput())
     }
 
@@ -337,6 +362,54 @@ export function reduceOfflineAuthority(
       return success(
         state,
         applyTargetAction(room, command.targetId, environment),
+        now,
+        createOfflineAuthorityInput(),
+      )
+    }
+
+    if (command.type === 'SET_OFFLINE_NIGHT_TARGET_DRAFT') {
+      const action = activeNightAction(room)
+      if (!action || action.status !== 'OPEN') {
+        throw new Error('Lượt gọi hiện tại không có hành động để chọn nháp.')
+      }
+      if (
+        command.targetId !== null &&
+        !action.eligibleTargetIds.includes(command.targetId)
+      ) {
+        throw new Error('Mục tiêu hành động không hợp lệ.')
+      }
+      if (
+        command.targetId === null &&
+        action.kind !== 'HUNTER_PRELOCK' &&
+        action.kind !== 'SERIAL_KILLER_ATTACK'
+      ) {
+        throw new Error('Role này bắt buộc chọn một mục tiêu.')
+      }
+      return {
+        ...state,
+        authorityInput: {
+          ...state.authorityInput,
+          nightTargetDraft: command.targetId === null
+            ? { kind: 'NOBODY' }
+            : { kind: 'PLAYER', playerId: command.targetId },
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+
+    if (command.type === 'CONFIRM_OFFLINE_NIGHT_TARGET') {
+      const draft = state.authorityInput.nightTargetDraft
+      if (draft.kind === 'UNSET') {
+        throw new Error('Hãy chọn mục tiêu trước khi xác nhận.')
+      }
+      return success(
+        state,
+        applyTargetAction(
+          room,
+          draft.kind === 'PLAYER' ? draft.playerId : null,
+          environment,
+        ),
         now,
         createOfflineAuthorityInput(),
       )

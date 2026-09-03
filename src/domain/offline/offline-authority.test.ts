@@ -25,7 +25,7 @@ function readySession(
   const base = createOfflineSessionState(1)
   return {
     ...base,
-    phase: 'NIGHT_1_READY',
+    phase: 'PHYSICAL_DEAL',
     seatCount: roleIds.length,
     playerNames: roleIds.map((_, index) => `Người ${index + 1}`),
     roleComposition: composition,
@@ -33,11 +33,11 @@ function readySession(
       playerId: `offline-player-${index + 1}`,
       roleId,
     })),
-    nightOne: {
+    nightRitual: {
       callPlan: getOfflineNightOneCallPlan(composition),
-      callIndex: getOfflineNightOneCallPlan(composition).length,
+      callIndex: 0,
       activeStep: null,
-      draftHolderIds: [],
+      draftHolderIdsByRole: {},
     },
   }
 }
@@ -61,6 +61,9 @@ function runner(initial: OfflineSessionState) {
 }
 
 function callNext(testRunner: ReturnType<typeof runner>) {
+  if (testRunner.state.nightRitual.activeStep?.kind === 'CALL_COMPLETE') {
+    testRunner.dispatch({ type: 'ADVANCE_FROM_COMPLETED_RITUAL' })
+  }
   testRunner.dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })
   return testRunner.state.authority?.night?.activeRoleId
 }
@@ -162,7 +165,7 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
         (call) => call.status === 'NOT_CALLED',
       ),
     ).toBe(true)
-    expect(game.state.nightOne.activeStep).toBeNull()
+    expect(game.state.nightRitual.activeStep).toBeNull()
 
     expect(callNext(game)).toBe('werewolf')
     game.dispatch({
@@ -354,8 +357,6 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
       ]),
     )
     game.dispatch({ type: 'BEGIN_OFFLINE_MATCH' })
-    expect(callNext(game)).toBe('traitor')
-    game.dispatch({ type: 'COMPLETE_ACTIVE_OFFLINE_RITUAL' })
     expect(callNext(game)).toBe('werewolf')
     game.dispatch({
       type: 'SUBMIT_OFFLINE_NIGHT_TARGET',
@@ -366,6 +367,11 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     expect(callNext(game)).toBe('serial-killer')
     game.dispatch({ type: 'SUBMIT_OFFLINE_NIGHT_TARGET', targetId: null })
     game.dispatch({ type: 'FINALIZE_OFFLINE_NIGHT' })
+    expect(
+      game.state.authority?.nightResolution?.effects.filter(
+        (effect) => effect.sourceRoleId === 'werewolf',
+      ),
+    ).toHaveLength(1)
     expect(
       game.state.authority?.factionTransitions?.halfWolves['offline-player-3']
         ?.status,
@@ -379,13 +385,10 @@ describe('MS-O2 Offline shared-engine authority adapter', () => {
     if (!room) throw new Error('Expected authority room')
     expect(isHalfWolfTransformed(room.factionTransitions, 'offline-player-3')).toBe(true)
     expect(room.night?.calls.map((call) => call.roleId)).toEqual([
-      'traitor',
       'werewolf',
       'half-wolf',
       'serial-killer',
     ])
-    expect(callNext(game)).toBe('traitor')
-    game.dispatch({ type: 'COMPLETE_ACTIVE_OFFLINE_RITUAL' })
     expect(callNext(game)).toBe('werewolf')
     expect(
       game.state.authority?.night?.actionsByRole.werewolf?.eligibleActorIds,

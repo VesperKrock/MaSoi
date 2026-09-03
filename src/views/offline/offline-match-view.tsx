@@ -5,10 +5,13 @@ import {
   isHalfWolfTransformed,
   isTraitorConverted,
 } from '../../domain/gameplay/faction-transitions'
-import type { NightAction, PlayerId, RoomState } from '../../domain/game/types'
-import type {
-  OfflineSessionCommand,
-  OfflineSessionState,
+import type { NightAction, PlayerId, RoleId, RoomState } from '../../domain/game/types'
+import {
+  getOfflineDiscoveryRoleIds,
+  getOfflineRoleHolderIds,
+  getUnassignedOfflinePlayerIds,
+  type OfflineSessionCommand,
+  type OfflineSessionState,
 } from '../../domain/offline/offline-session'
 import { classicRoleById } from '../../domain/roles/classic-catalog'
 import { appUrl } from '../../lib/app-url'
@@ -36,9 +39,15 @@ function runtimeLabel(room: RoomState, playerId: PlayerId) {
   return ''
 }
 
-function OfflineRoster({ room }: { room: RoomState }) {
+function OfflineRoster({
+  state,
+  room,
+}: {
+  state: OfflineSessionState
+  room: RoomState
+}) {
   const roleByPlayerId = new Map(
-    room.roleAssignments.map((assignment) => [
+    state.roleAssignments.map((assignment) => [
       assignment.playerId,
       assignment.roleId,
     ]),
@@ -62,7 +71,7 @@ function OfflineRoster({ room }: { room: RoomState }) {
               <div>
                 <strong>{player.alias}</strong>
                 <small>
-                  {roleId ? classicRoleById[roleId].displayName : 'Chưa rõ'}
+                  {roleId ? classicRoleById[roleId].displayName : 'CHƯA KHÁM PHÁ'}
                   {runtime ? ` · ${runtime}` : ''}
                 </small>
               </div>
@@ -108,6 +117,136 @@ function TargetButtons({
   )
 }
 
+function ritualName(roleId: RoleId) {
+  return roleId === 'werewolf'
+    ? 'Phe Sói'
+    : classicRoleById[roleId].displayName
+}
+
+function wakeCue(roleId: RoleId) {
+  return roleId === 'werewolf'
+    ? 'PHE SÓI DẬY ĐI'
+    : `${classicRoleById[roleId].displayName.toLocaleUpperCase('vi')} DẬY ĐI`
+}
+
+function sleepCue(roleId: RoleId) {
+  return roleId === 'werewolf'
+    ? 'SÓI NGỦ ĐI'
+    : `${classicRoleById[roleId].displayName.toLocaleUpperCase('vi')} NGỦ ĐI`
+}
+
+function HolderDiscovery({
+  state,
+  room,
+  dispatch,
+}: OfflineMatchProps & { room: RoomState }) {
+  const step = state.nightRitual.activeStep
+  if (step?.kind !== 'HOLDER_DISCOVERY') return null
+  const discoveryRoleIds = getOfflineDiscoveryRoleIds(state, step.roleId)
+  const unassignedIds = getUnassignedOfflinePlayerIds(state)
+  const draftIds = new Set(
+    Object.values(state.nightRitual.draftHolderIdsByRole).flatMap(
+      (playerIds) => playerIds ?? [],
+    ),
+  )
+  const complete = discoveryRoleIds.every((roleId) =>
+    getOfflineRoleHolderIds(state, roleId).length +
+      (state.nightRitual.draftHolderIdsByRole[roleId]?.length ?? 0) ===
+    (state.roleComposition[roleId] ?? 0),
+  )
+
+  return (
+    <section className="panel offline-active-call offline-holder-panel offline-interleaved-discovery">
+      <p className="eyebrow">CALL · KHÁM PHÁ NẾU CHƯA BIẾT</p>
+      <h2>{wakeCue(step.roleId)}</h2>
+      <p>
+        Xác nhận đúng holder rồi hành động ngay trong cùng lượt gọi. Người đã có
+        vai không thể được gán lần nữa.
+      </p>
+      {discoveryRoleIds.map((roleId) => {
+        const role = classicRoleById[roleId]
+        const knownIds = getOfflineRoleHolderIds(state, roleId)
+        const selectedIds = state.nightRitual.draftHolderIdsByRole[roleId] ?? []
+        const requiredCount = state.roleComposition[roleId] ?? 0
+        return (
+          <section className="offline-holder-group" key={roleId}>
+            <div className="offline-selection-status">
+              <span>{role.displayName.toLocaleUpperCase('vi')}</span>
+              <strong>{knownIds.length + selectedIds.length} / {requiredCount}</strong>
+            </div>
+            {knownIds.length > 0 && (
+              <p className="hint">
+                Đã biết: {knownIds.map((playerId) => nameFor(room, playerId)).join(', ')}
+              </p>
+            )}
+            <div
+              className="offline-holder-selector"
+              aria-label={`Người giữ vai ${role.displayName}`}
+            >
+              {unassignedIds.map((playerId) => {
+                const player = room.players.find((entry) => entry.id === playerId)
+                if (!player) return null
+                const selected = selectedIds.includes(playerId)
+                const selectedForOtherRole = draftIds.has(playerId) && !selected
+                return (
+                  <button
+                    className={selected ? 'selected' : ''}
+                    disabled={selectedForOtherRole}
+                    key={player.id}
+                    aria-pressed={selected}
+                    onClick={() => dispatch({ type: 'TOGGLE_HOLDER', roleId, playerId })}
+                  >
+                    <span>#{player.seat}</span>
+                    <strong>{player.alias}</strong>
+                    <small>{selected ? 'Đã chọn' : 'Chưa có vai'}</small>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
+      <button
+        className="button primary full"
+        disabled={!complete}
+        onClick={() => dispatch({ type: 'CONFIRM_HOLDERS' })}
+      >
+        Xác nhận holder · hành động ngay
+      </button>
+    </section>
+  )
+}
+
+function CompletedNightCall({
+  state,
+  room,
+  dispatch,
+}: OfflineMatchProps & { room: RoomState }) {
+  const step = state.nightRitual.activeStep
+  if (step?.kind !== 'CALL_COMPLETE') return null
+  const holderRoleIds = getOfflineDiscoveryRoleIds(state, step.roleId)
+  const holderNames = holderRoleIds.flatMap((roleId) =>
+    getOfflineRoleHolderIds(state, roleId).map((playerId) => nameFor(room, playerId)),
+  )
+  return (
+    <section className="panel offline-active-call offline-call-complete">
+      <p className="eyebrow">HÀNH ĐỘNG ĐÃ LƯU · HOÀN TẤT LƯỢT GỌI</p>
+      <h2>{sleepCue(step.roleId)}</h2>
+      <p>
+        {holderNames.length > 0
+          ? `Holder: ${holderNames.join(', ')}. Dữ liệu đã được lưu trên thiết bị.`
+          : `${ritualName(step.roleId)} đã hoàn tất.`}
+      </p>
+      <button
+        className="button primary full"
+        onClick={() => dispatch({ type: 'ADVANCE_FROM_COMPLETED_RITUAL' })}
+      >
+        Tiếp tục lượt gọi kế tiếp
+      </button>
+    </section>
+  )
+}
+
 function CupidAction({
   state,
   room,
@@ -147,7 +286,7 @@ function SeerResult({
     <div className="offline-seer-result">
       <span>{nameFor(room, action.seer.targetId)}</span>
       <strong>
-        {action.seer.result === 'WOLF' ? 'LÀ MA SÓI' : 'KHÔNG PHẢI MA SÓI'}
+        {action.seer.result === 'WOLF' ? 'SÓI' : 'KHÔNG PHẢI SÓI'}
       </strong>
       <button
         className="button primary full"
@@ -253,18 +392,23 @@ function ActiveNightCall({
   if (!roleId) return null
   const role = classicRoleById[roleId]
   const action = room.night?.actionsByRole[roleId]
-  const holderNames = room.roleAssignments
-    .filter((assignment) => assignment.roleId === roleId)
-    .map((assignment) => nameFor(room, assignment.playerId))
+  const holderNames = getOfflineDiscoveryRoleIds(state, roleId).flatMap(
+    (holderRoleId) => getOfflineRoleHolderIds(state, holderRoleId)
+      .map((playerId) => nameFor(room, playerId)),
+  )
   const livingActorNames = (action?.eligibleActorIds ?? []).map((playerId) =>
     nameFor(room, playerId),
   )
+  const targetDraft = state.authorityInput.nightTargetDraft
+  const selectedTargetIds = targetDraft.kind === 'PLAYER'
+    ? [targetDraft.playerId]
+    : []
 
   if (!action || action.status !== 'OPEN') {
     return (
       <section className="panel offline-active-call">
         <p className="eyebrow">ĐÃ GỌI · {role.displayName}</p>
-        <h2>{role.displayName.toLocaleUpperCase('vi')} ĐI NGỦ</h2>
+        <h2>{sleepCue(roleId)}</h2>
         <p>
           {holderNames.length > 0
             ? `Người giữ vai: ${holderNames.join(', ')}. Vai thụ động, đã chết hoặc không đủ điều kiện hành động.`
@@ -282,8 +426,8 @@ function ActiveNightCall({
 
   return (
     <section className="panel offline-active-call">
-      <p className="eyebrow">ROLE_ACTION · {action.kind}</p>
-      <h2>{role.displayName}</h2>
+      <p className="eyebrow">ACTION · {action.kind}</p>
+      <h2>{wakeCue(roleId)}</h2>
       <p>
         Quản trò ghi thay cho:{' '}
         <strong>{livingActorNames.join(', ') || holderNames.join(', ')}</strong>
@@ -306,27 +450,38 @@ function ActiveNightCall({
           <div className="offline-action-card">
             <p>
               {action.kind === 'WOLF_VOTE'
-                ? 'Ghi đúng một mục tiêu chung của cả bầy. Mục tiêu là bắt buộc.'
-                : 'Chọn mục tiêu theo tên người chơi.'}
+                ? 'HÃY CHỌN NGƯỜI CÁC NGƯƠI MUỐN GIẾT'
+                : action.roleId === 'seer'
+                  ? 'HÃY CHỌN NGƯỜI NGƯƠI MUỐN SOI'
+                  : 'Chọn mục tiêu theo tên người chơi rồi xác nhận.'}
             </p>
             <TargetButtons
               room={room}
               targetIds={action.eligibleTargetIds}
+              selectedIds={selectedTargetIds}
               onSelect={(targetId) =>
-                dispatch({ type: 'SUBMIT_OFFLINE_NIGHT_TARGET', targetId })
+                dispatch({ type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT', targetId })
               }
             />
             {(action.kind === 'HUNTER_PRELOCK' ||
               action.kind === 'SERIAL_KILLER_ATTACK') && (
               <button
-                className="button secondary full"
+                className={`button secondary full${targetDraft.kind === 'NOBODY' ? ' selected' : ''}`}
+                aria-pressed={targetDraft.kind === 'NOBODY'}
                 onClick={() =>
-                  dispatch({ type: 'SUBMIT_OFFLINE_NIGHT_TARGET', targetId: null })
+                  dispatch({ type: 'SET_OFFLINE_NIGHT_TARGET_DRAFT', targetId: null })
                 }
               >
                 Không ai
               </button>
             )}
+            <button
+              className="button primary full"
+              disabled={targetDraft.kind === 'UNSET'}
+              onClick={() => dispatch({ type: 'CONFIRM_OFFLINE_NIGHT_TARGET' })}
+            >
+              Xác nhận hành động
+            </button>
           </div>
         )}
     </section>
@@ -361,6 +516,7 @@ function LoversReveal({
 function NightLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: RoomState }) {
   const night = room.night
   if (!night) return null
+  const ritualStep = state.nightRitual.activeStep
   const couple = room.cupidLovers?.couple
   const loversPending =
     couple &&
@@ -390,7 +546,7 @@ function NightLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: R
         <div className="offline-call-plan">
           {night.calls.map((call) => (
             <span
-              className={`${call.status.toLocaleLowerCase()} ${night.activeRoleId === call.roleId ? 'active' : ''}`}
+              className={`${call.status.toLocaleLowerCase()} ${night.activeRoleId === call.roleId || ritualStep?.roleId === call.roleId ? 'active' : ''}`}
               key={call.roleId}
             >
               {classicRoleById[call.roleId].displayName}
@@ -399,7 +555,11 @@ function NightLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: R
         </div>
       </section>
 
-      {loversPending ? (
+      {ritualStep?.kind === 'HOLDER_DISCOVERY' ? (
+        <HolderDiscovery state={state} room={room} dispatch={dispatch} />
+      ) : ritualStep?.kind === 'CALL_COMPLETE' ? (
+        <CompletedNightCall state={state} room={room} dispatch={dispatch} />
+      ) : loversPending ? (
         <LoversReveal state={state} room={room} dispatch={dispatch} />
       ) : night.activeRoleId ? (
         <ActiveNightCall state={state} room={room} dispatch={dispatch} />
@@ -426,13 +586,13 @@ function NightLifecycle({ state, room, dispatch }: OfflineMatchProps & { room: R
       ) : nextCall ? (
         <section className="panel offline-next-call">
           <p className="eyebrow">Lượt kế tiếp</p>
-          <h2>{classicRoleById[nextCall.roleId].displayName}</h2>
+          <h2>{wakeCue(nextCall.roleId)}</h2>
           <p>Gọi role ngoài đời rồi mở bước ghi nhận trên máy Quản trò.</p>
           <button
             className="button primary full"
             onClick={() => dispatch({ type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' })}
           >
-            GỌI {classicRoleById[nextCall.roleId].displayName.toLocaleUpperCase('vi')}
+            GỌI {ritualName(nextCall.roleId).toLocaleUpperCase('vi')}
           </button>
         </section>
       ) : (
@@ -703,7 +863,7 @@ export function OfflineMatchView({
             <DayLifecycle state={state} room={room} dispatch={dispatch} />
           )}
         </div>
-        <OfflineRoster room={room} />
+        <OfflineRoster state={state} room={room} />
       </div>
     </main>
   )

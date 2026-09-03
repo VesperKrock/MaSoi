@@ -1,4 +1,3 @@
-import { getEligibleRoleTargets } from '../actions/target-rules'
 import type { RoomState } from '../game/types'
 import {
   defaultRoleComposition,
@@ -11,6 +10,7 @@ import {
 } from '../game/room-setup'
 import type { Player, PlayerId, RoleAssignment } from '../game/types'
 import {
+  classicRoleById,
   classicRoleCatalog,
   type RoleId,
 } from '../roles/classic-catalog'
@@ -19,27 +19,28 @@ import {
   type RoleActionType,
 } from '../roles/role-definitions'
 import {
+  normalizeFactionTransitionState,
+} from '../gameplay/faction-transitions'
+import { createInitialCupidLoverState } from '../gameplay/lovers'
+import {
   createOfflineAuthorityInput,
   reduceOfflineAuthority,
   type OfflineAuthorityCommand,
   type OfflineAuthorityInput,
 } from './offline-authority'
 
-export const offlineSessionSchemaVersion = 4 as const
+export const offlineSessionSchemaVersion = 5 as const
 export const offlinePlayerIdPrefix = 'offline-player-'
 
 export type OfflinePhase =
   | 'SETUP'
   | 'PHYSICAL_DEAL'
-  | 'NIGHT_1_DISCOVERY'
-  | 'NIGHT_1_READY'
   | 'MATCH'
   | 'FINISHED'
 
 export interface OfflineHolderDiscoveryStep {
   kind: 'HOLDER_DISCOVERY'
   roleId: RoleId
-  requiredHolderCount: number
 }
 
 export interface OfflineRoleActionStep {
@@ -48,9 +49,17 @@ export interface OfflineRoleActionStep {
   actionType: RoleActionType
 }
 
-export type OfflineNightOneStep =
+export interface OfflineCallCompleteStep {
+  kind: 'CALL_COMPLETE'
+  roleId: RoleId
+}
+
+export type OfflineNightRitualStep =
   | OfflineHolderDiscoveryStep
   | OfflineRoleActionStep
+  | OfflineCallCompleteStep
+
+export type OfflineHolderDrafts = Partial<Record<RoleId, PlayerId[]>>
 
 export interface OfflineRoleIdentityDiscoveredEvent {
   id: string
@@ -98,11 +107,11 @@ export interface OfflineSessionState {
   roleComposition: RoleComposition
   roleAssignments: RoleAssignment[]
   offlineEvents: OfflineSessionEvent[]
-  nightOne: {
+  nightRitual: {
     callPlan: RoleId[]
     callIndex: number
-    activeStep: OfflineNightOneStep | null
-    draftHolderIds: PlayerId[]
+    activeStep: OfflineNightRitualStep | null
+    draftHolderIdsByRole: OfflineHolderDrafts
   }
   authority: RoomState | null
   authorityInput: OfflineAuthorityInput
@@ -122,15 +131,13 @@ export type OfflineSessionCommand =
   | { type: 'SET_PLAYER_NAME'; index: number; name: string }
   | { type: 'SET_ROLE_QUANTITY'; roleId: RoleId; quantity: number }
   | { type: 'CONTINUE_TO_PHYSICAL_DEAL' }
-  | { type: 'BEGIN_NIGHT_ONE_DISCOVERY' }
-  | { type: 'TOGGLE_HOLDER'; playerId: PlayerId }
+  | { type: 'TOGGLE_HOLDER'; roleId: RoleId; playerId: PlayerId }
   | { type: 'CONFIRM_HOLDERS' }
-  | { type: 'ADVANCE_FROM_ROLE_ACTION' }
+  | { type: 'ADVANCE_FROM_COMPLETED_RITUAL' }
   | { type: 'CLEAR_ERROR' }
 
 const offlineNightOneRoleOrder: readonly RoleId[] = [
   'cupid',
-  'traitor',
   'werewolf',
   'seer',
   'protector',
@@ -155,11 +162,11 @@ export function createOfflineSessionState(
     roleComposition: defaultRoleComposition(seatCount),
     roleAssignments: [],
     offlineEvents: [],
-    nightOne: {
+    nightRitual: {
       callPlan: [],
       callIndex: 0,
       activeStep: null,
-      draftHolderIds: [],
+      draftHolderIdsByRole: {},
     },
     authority: null,
     authorityInput: createOfflineAuthorityInput(),
@@ -208,9 +215,13 @@ export function getOfflineNightOneCallPlan(
       )
       .map((role) => role.id),
   )
-  return offlineNightOneRoleOrder.filter((roleId) =>
-    configuredNonVillagers.has(roleId),
-  )
+  // Traitor wakes inside the Werewolf-faction ritual. It remains a distinct
+  // shared role assignment and never creates its own bite/action.
+  if (configuredNonVillagers.has('traitor')) {
+    configuredNonVillagers.add('werewolf')
+  }
+  configuredNonVillagers.delete('traitor')
+  return offlineNightOneRoleOrder.filter((roleId) => configuredNonVillagers.has(roleId))
 }
 
 export function getUnassignedOfflinePlayerIds(
@@ -236,35 +247,21 @@ export function getOfflineRoleHolderIds(
 export function getOfflineEligibleActionTargetIds(
   state: OfflineSessionState,
 ): PlayerId[] {
-  const step = state.nightOne.activeStep
-  if (!step || step.kind !== 'ROLE_ACTION' || step.actionType === 'NONE') {
-    return []
+  const roleId = state.authority?.night?.activeRoleId
+  if (roleId) {
+    return state.authority?.night?.actionsByRole[roleId]?.eligibleTargetIds ?? []
   }
-  const actorId = getOfflineRoleHolderIds(state, step.roleId)[0]
-  return getEligibleRoleTargets(
-    {
-      players: getOfflinePlayers(state),
-      roleAssignments: state.roleAssignments,
-      journal: [],
-      dayNumber: 1,
-    },
-    step.roleId,
-    actorId,
-  )
+  return []
 }
 
 function actionTypeForRole(roleId: RoleId): RoleActionType {
   return roleDefinitions[roleId]?.actionType ?? 'NONE'
 }
 
-function holderStep(
-  state: OfflineSessionState,
-  roleId: RoleId,
-): OfflineHolderDiscoveryStep {
+function holderStep(roleId: RoleId): OfflineHolderDiscoveryStep {
   return {
     kind: 'HOLDER_DISCOVERY',
     roleId,
-    requiredHolderCount: state.roleComposition[roleId] ?? 0,
   }
 }
 
@@ -276,10 +273,91 @@ function withError(
   return { ...state, blockingError, updatedAt: now }
 }
 
-function finishVillagerAssignment(
+function configuredDiscoveryRoleIds(
+  state: OfflineSessionState,
+  ritualRoleId: RoleId,
+): RoleId[] {
+  const roleIds = ritualRoleId === 'werewolf'
+    ? (['werewolf', 'traitor'] as const)
+    : [ritualRoleId]
+  return roleIds.filter((roleId) => (state.roleComposition[roleId] ?? 0) > 0)
+}
+
+export function getOfflineDiscoveryRoleIds(
+  state: OfflineSessionState,
+  ritualRoleId: RoleId,
+): RoleId[] {
+  return configuredDiscoveryRoleIds(state, ritualRoleId)
+}
+
+function hasCompleteHolderDiscovery(
+  state: OfflineSessionState,
+  ritualRoleId: RoleId,
+): boolean {
+  return configuredDiscoveryRoleIds(state, ritualRoleId).every(
+    (roleId) =>
+      getOfflineRoleHolderIds(state, roleId).length ===
+      (state.roleComposition[roleId] ?? 0),
+  )
+}
+
+function projectAuthorityAssignments(
+  state: Pick<OfflineSessionState, 'playerNames' | 'roleAssignments'>,
+): RoleAssignment[] {
+  const knownByPlayerId = new Map(
+    state.roleAssignments.map((assignment) => [assignment.playerId, assignment.roleId]),
+  )
+  return state.playerNames.map((_, index) => {
+    const playerId = `${offlinePlayerIdPrefix}${index + 1}`
+    return {
+      playerId,
+      // Once every Werewolf is discovered, every remaining UNKNOWN player is
+      // safely non-Wolf for the shared Night-1 Seer classifier. The Offline
+      // session remains the source of truth for whether that physical role is
+      // actually known; this projection is never shown as a discovered role.
+      roleId: knownByPlayerId.get(playerId) ?? 'villager',
+    }
+  })
+}
+
+function syncAuthorityAssignments(
   state: OfflineSessionState,
   now: number,
 ): OfflineSessionState {
+  if (!state.authority) return state
+  const roleAssignments = projectAuthorityAssignments(state)
+  const cupidWasUnknown = state.authority.cupidLovers?.objective === null
+  return {
+    ...state,
+    authority: {
+      ...state.authority,
+      roleAssignments,
+      factionTransitions: normalizeFactionTransitionState(
+        roleAssignments,
+        state.authority.factionTransitions,
+      ),
+      cupidLovers: cupidWasUnknown && roleAssignments.some(
+        (assignment) => assignment.roleId === 'cupid',
+      )
+        ? createInitialCupidLoverState(roleAssignments, now)
+        : state.authority.cupidLovers,
+    },
+  }
+}
+
+function maybeAssignVillagers(
+  state: OfflineSessionState,
+  now: number,
+): OfflineSessionState {
+  const allNonVillagersKnown = classicRoleCatalog
+    .filter((role) => role.id !== 'villager')
+    .every(
+      (role) =>
+        getOfflineRoleHolderIds(state, role.id).length ===
+        (state.roleComposition[role.id] ?? 0),
+    )
+  if (!allNonVillagersKnown) return state
+
   const unassignedIds = getUnassignedOfflinePlayerIds(state)
   const expectedVillagers = state.roleComposition.villager ?? 0
   const assignedIds = state.roleAssignments.map(
@@ -302,7 +380,6 @@ function finishVillagerAssignment(
 
   return {
     ...state,
-    phase: 'NIGHT_1_READY',
     roleAssignments: [
       ...state.roleAssignments,
       ...unassignedIds.map((playerId) => ({
@@ -310,13 +387,55 @@ function finishVillagerAssignment(
         roleId: 'villager' as const,
       })),
     ],
-    nightOne: {
-      ...state.nightOne,
-      callIndex: state.nightOne.callPlan.length,
-      activeStep: null,
-      draftHolderIds: [],
-    },
     blockingError: null,
+    updatedAt: now,
+  }
+}
+
+function currentAuthorityCallIndex(state: OfflineSessionState, roleId: RoleId): number {
+  const calls = state.authority?.night?.calls ?? []
+  const index = calls.findIndex((call) => call.roleId === roleId)
+  return index >= 0 ? index : state.nightRitual.callIndex
+}
+
+function openSharedRoleAction(
+  state: OfflineSessionState,
+  roleId: RoleId,
+  now: number,
+): OfflineSessionState {
+  const staged: OfflineSessionState = {
+    ...state,
+    nightRitual: {
+      ...state.nightRitual,
+      callIndex: currentAuthorityCallIndex(state, roleId),
+      activeStep: {
+        kind: 'ROLE_ACTION',
+        roleId,
+        actionType: actionTypeForRole(roleId),
+      },
+      draftHolderIdsByRole: {},
+    },
+  }
+  return reduceOfflineAuthority(
+    staged,
+    { type: 'CALL_NEXT_OFFLINE_NIGHT_ROLE' },
+    now,
+  )
+}
+
+function completedRitualStep(
+  state: OfflineSessionState,
+  roleId: RoleId,
+  now: number,
+): OfflineSessionState {
+  const call = state.authority?.night?.calls.find((entry) => entry.roleId === roleId)
+  if (state.blockingError || call?.status !== 'COMPLETED') return state
+  return {
+    ...state,
+    nightRitual: {
+      ...state.nightRitual,
+      activeStep: { kind: 'CALL_COMPLETE', roleId },
+    },
     updatedAt: now,
   }
 }
@@ -391,69 +510,123 @@ export function reduceOfflineSession(
       offlineEvents: [],
       authority: null,
       authorityInput: createOfflineAuthorityInput(),
-      nightOne: {
+      nightRitual: {
         callPlan: getOfflineNightOneCallPlan(state.roleComposition),
         callIndex: 0,
         activeStep: null,
-        draftHolderIds: [],
+        draftHolderIdsByRole: {},
       },
       blockingError: null,
       updatedAt: now,
     }
   }
 
-  if (command.type === 'BEGIN_NIGHT_ONE_DISCOVERY') {
+  if (command.type === 'BEGIN_OFFLINE_MATCH') {
     if (state.phase !== 'PHYSICAL_DEAL') return state
-    const roleId = state.nightOne.callPlan[0]
-    if (!roleId) return finishVillagerAssignment(state, now)
-    return {
-      ...state,
-      phase: 'NIGHT_1_DISCOVERY',
-      nightOne: {
-        ...state.nightOne,
-        activeStep: holderStep(state, roleId),
-      },
-      blockingError: null,
-      updatedAt: now,
+    return reduceOfflineAuthority(maybeAssignVillagers(state, now), command, now)
+  }
+
+  if (command.type === 'CALL_NEXT_OFFLINE_NIGHT_ROLE') {
+    if (
+      state.phase !== 'MATCH' ||
+      !state.authority?.night ||
+      state.nightRitual.activeStep
+    ) {
+      return state
     }
+    const nextCall = state.authority.night.calls.find(
+      (call) => call.status === 'NOT_CALLED',
+    )
+    if (!nextCall) return reduceOfflineAuthority(state, command, now)
+    const callIndex = currentAuthorityCallIndex(state, nextCall.roleId)
+    if (
+      state.authority.dayNumber === 1 &&
+      !hasCompleteHolderDiscovery(state, nextCall.roleId)
+    ) {
+      return {
+        ...state,
+        nightRitual: {
+          ...state.nightRitual,
+          callIndex,
+          activeStep: holderStep(nextCall.roleId),
+          draftHolderIdsByRole: {},
+        },
+        blockingError: null,
+        updatedAt: now,
+      }
+    }
+    return openSharedRoleAction(state, nextCall.roleId, now)
   }
 
   if (command.type === 'TOGGLE_HOLDER') {
-    const step = state.nightOne.activeStep
-    if (state.phase !== 'NIGHT_1_DISCOVERY' || step?.kind !== 'HOLDER_DISCOVERY') {
+    const step = state.nightRitual.activeStep
+    if (
+      state.phase !== 'MATCH' ||
+      state.authority?.dayNumber !== 1 ||
+      step?.kind !== 'HOLDER_DISCOVERY' ||
+      !configuredDiscoveryRoleIds(state, step.roleId).includes(command.roleId)
+    ) {
       return state
     }
     const availableIds = new Set(getUnassignedOfflinePlayerIds(state))
     if (!availableIds.has(command.playerId)) return state
-    const selected = state.nightOne.draftHolderIds.includes(command.playerId)
-    const draftHolderIds = selected
-      ? state.nightOne.draftHolderIds.filter(
-          (playerId) => playerId !== command.playerId,
-        )
-      : state.nightOne.draftHolderIds.length < step.requiredHolderCount
-        ? [...state.nightOne.draftHolderIds, command.playerId]
-        : state.nightOne.draftHolderIds
+    const drafts = state.nightRitual.draftHolderIdsByRole
+    const current = drafts[command.roleId] ?? []
+    const selected = current.includes(command.playerId)
+    const selectedElsewhere = Object.entries(drafts).some(
+      ([roleId, playerIds]) =>
+        roleId !== command.roleId && playerIds?.includes(command.playerId),
+    )
+    if (!selected && selectedElsewhere) return state
+    const knownCount = getOfflineRoleHolderIds(state, command.roleId).length
+    const requiredCount = state.roleComposition[command.roleId] ?? 0
+    const nextDraft = selected
+      ? current.filter((playerId) => playerId !== command.playerId)
+      : knownCount + current.length < requiredCount
+        ? [...current, command.playerId]
+        : current
     return {
       ...state,
-      nightOne: { ...state.nightOne, draftHolderIds },
+      nightRitual: {
+        ...state.nightRitual,
+        draftHolderIdsByRole: {
+          ...drafts,
+          [command.roleId]: nextDraft,
+        },
+      },
       blockingError: null,
       updatedAt: now,
     }
   }
 
   if (command.type === 'CONFIRM_HOLDERS') {
-    const step = state.nightOne.activeStep
-    if (state.phase !== 'NIGHT_1_DISCOVERY' || step?.kind !== 'HOLDER_DISCOVERY') {
+    const step = state.nightRitual.activeStep
+    if (
+      state.phase !== 'MATCH' ||
+      state.authority?.dayNumber !== 1 ||
+      step?.kind !== 'HOLDER_DISCOVERY'
+    ) {
       return state
     }
-    const selectedIds = state.nightOne.draftHolderIds
-    if (selectedIds.length !== step.requiredHolderCount) {
+    const discoveryRoleIds = configuredDiscoveryRoleIds(state, step.roleId)
+    const selectedAssignments = discoveryRoleIds.flatMap((roleId) =>
+      (state.nightRitual.draftHolderIdsByRole[roleId] ?? []).map(
+        (playerId) => ({ playerId, roleId }),
+      ),
+    )
+    for (const roleId of discoveryRoleIds) {
+      const knownCount = getOfflineRoleHolderIds(state, roleId).length
+      const selectedCount = state.nightRitual.draftHolderIdsByRole[roleId]?.length ?? 0
+      const requiredCount = state.roleComposition[roleId] ?? 0
+      if (knownCount + selectedCount !== requiredCount) {
       return withError(
         state,
-        `Phải chọn đúng ${step.requiredHolderCount} người giữ vai.`,
+          `Phải chọn đúng ${requiredCount} người giữ vai ${classicRoleById[roleId].displayName}.`,
         now,
       )
+      }
     }
+    const selectedIds = selectedAssignments.map((assignment) => assignment.playerId)
     if (new Set(selectedIds).size !== selectedIds.length) {
       return withError(state, 'Không thể chọn trùng người giữ vai.', now)
     }
@@ -465,67 +638,107 @@ export function reduceOfflineSession(
         now,
       )
     }
-    return {
+    let next: OfflineSessionState = {
       ...state,
       roleAssignments: [
         ...state.roleAssignments,
-        ...selectedIds.map((playerId) => ({
-          playerId,
-          roleId: step.roleId,
-        })),
+        ...selectedAssignments,
       ],
       offlineEvents: [
         ...state.offlineEvents,
-        {
-          id: `offline-role-discovery-${step.roleId}-${now}`,
-          type: 'ROLE_IDENTITY_DISCOVERED',
-          occurredAt: now,
-          roleId: step.roleId,
-          holderPlayerIds: [...selectedIds],
-        },
+        ...discoveryRoleIds.flatMap((roleId, index) => {
+          const selectedForRole = selectedAssignments
+            .filter((assignment) => assignment.roleId === roleId)
+            .map((assignment) => assignment.playerId)
+          if (selectedForRole.length === 0) return []
+          return [{
+            id: `offline-role-discovery-${roleId}-${now}-${index}`,
+            type: 'ROLE_IDENTITY_DISCOVERED' as const,
+            occurredAt: now,
+            roleId,
+            holderPlayerIds: [
+              ...getOfflineRoleHolderIds(state, roleId),
+              ...selectedForRole,
+            ],
+          }]
+        }),
       ],
-      nightOne: {
-        ...state.nightOne,
+      nightRitual: {
+        ...state.nightRitual,
         activeStep: {
           kind: 'ROLE_ACTION',
           roleId: step.roleId,
           actionType: actionTypeForRole(step.roleId),
         },
-        draftHolderIds: [],
+        draftHolderIdsByRole: {},
       },
       blockingError: null,
       updatedAt: now,
     }
+    next = maybeAssignVillagers(next, now)
+    next = syncAuthorityAssignments(next, now)
+    return openSharedRoleAction(next, step.roleId, now)
   }
 
-  if (command.type === 'ADVANCE_FROM_ROLE_ACTION') {
-    const step = state.nightOne.activeStep
-    if (state.phase !== 'NIGHT_1_DISCOVERY' || step?.kind !== 'ROLE_ACTION') {
+  if (command.type === 'ADVANCE_FROM_COMPLETED_RITUAL') {
+    const step = state.nightRitual.activeStep
+    if (state.phase !== 'MATCH' || step?.kind !== 'CALL_COMPLETE') {
       return state
-    }
-    const callIndex = state.nightOne.callIndex + 1
-    const nextRoleId = state.nightOne.callPlan[callIndex]
-    if (!nextRoleId) {
-      return finishVillagerAssignment(
-        {
-          ...state,
-          nightOne: { ...state.nightOne, callIndex },
-        },
-        now,
-      )
     }
     return {
       ...state,
-      nightOne: {
-        ...state.nightOne,
-        callIndex,
-        activeStep: holderStep(state, nextRoleId),
-        draftHolderIds: [],
+      nightRitual: {
+        ...state.nightRitual,
+        callIndex: state.nightRitual.callIndex + 1,
+        activeStep: null,
+        draftHolderIdsByRole: {},
       },
       blockingError: null,
       updatedAt: now,
     }
   }
 
-  return reduceOfflineAuthority(state, command, now)
+  const activeRoleId = state.nightRitual.activeStep?.roleId ??
+    state.authority?.night?.activeRoleId
+  const next = reduceOfflineAuthority(state, command, now)
+  if (command.type === 'START_OFFLINE_NEXT_NIGHT' && next !== state) {
+    return {
+      ...next,
+      nightRitual: {
+        ...next.nightRitual,
+        callIndex: 0,
+        activeStep: null,
+        draftHolderIdsByRole: {},
+      },
+    }
+  }
+  if (!activeRoleId) {
+    return next
+  }
+  if (command.type === 'COMPLETE_ACTIVE_OFFLINE_RITUAL') {
+    const call = next.authority?.night?.calls.find(
+      (entry) => entry.roleId === activeRoleId,
+    )
+    return call?.status === 'COMPLETED' && !next.blockingError
+      ? {
+          ...next,
+          nightRitual: {
+            ...next.nightRitual,
+            callIndex: next.nightRitual.callIndex + 1,
+            activeStep: null,
+            draftHolderIdsByRole: {},
+          },
+        }
+      : next
+  }
+  if (
+    command.type === 'SUBMIT_OFFLINE_NIGHT_TARGET' ||
+    command.type === 'CONFIRM_OFFLINE_NIGHT_TARGET' ||
+    command.type === 'ACKNOWLEDGE_OFFLINE_LOVERS' ||
+    command.type === 'ACKNOWLEDGE_OFFLINE_SEER_RESULT' ||
+    command.type === 'CONFIRM_OFFLINE_WITCH_DECISION'
+  ) {
+    return completedRitualStep(next, activeRoleId, now)
+  }
+  return next
 }
